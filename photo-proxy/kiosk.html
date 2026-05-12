@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Kiosk</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+    cursor: none;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- Crossfade images ---- */
+  #img-a, #img-b {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    transition: opacity 0.8s ease;
+  }
+  #img-a { opacity: 0; z-index: 1; }
+  #img-b { opacity: 0; z-index: 2; }
+
+  /* ---- Overlays (above images) ---- */
+  .overlay {
+    position: fixed;
+    z-index: 10;
+    color: #fff;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Clock — top right */
+  #clock {
+    top: 24px; right: 32px;
+    font-size: 52px;
+    font-weight: 200;
+    letter-spacing: 2px;
+  }
+
+  /* Same-day indicator — top left */
+  #day-indicator {
+    top: 24px; left: 32px;
+    font-size: 26px;
+    font-weight: 300;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    letter-spacing: 0.5px;
+  }
+  #day-indicator.visible { opacity: 1; }
+
+  /* Date label — bottom center */
+  #date-label {
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 22px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  /* Status / error overlay — centered */
+  #status {
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 26px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    text-align: center;
+    line-height: 1.6;
+    transition: opacity 0.5s ease;
+    max-width: 80%;
+  }
+  #status.hidden { opacity: 0; pointer-events: none; }
+
+  /* Progress bar — very bottom */
+  #progress-bar {
+    position: fixed;
+    bottom: 0; left: 0;
+    height: 3px;
+    width: 0%;
+    background: rgba(255,255,255,0.55);
+    z-index: 11;
+  }
+</style>
+</head>
+<body>
+
+<img id="img-a" src="" alt="">
+<img id="img-b" src="" alt="">
+
+<div class="overlay" id="clock">00:00</div>
+<div class="overlay" id="day-indicator"></div>
+<div class="overlay" id="date-label"></div>
+<div class="overlay" id="status">Loading…</div>
+<div id="progress-bar"></div>
+
+<script>
+  const PROXY = 'http://192.168.178.250:3002';
+
+  // ---- DOM refs ----
+  const imgA        = document.getElementById('img-a');
+  const imgB        = document.getElementById('img-b');
+  const clockEl     = document.getElementById('clock');
+  const dayIndEl    = document.getElementById('day-indicator');
+  const dateLabelEl = document.getElementById('date-label');
+  const progressBar = document.getElementById('progress-bar');
+  const statusEl    = document.getElementById('status');
+
+  // ---- State ----
+  let currentAsset   = null;
+  let dayDate        = null;
+  let inDayMode      = false;
+  let prefetchedNext = null;
+  let busy           = false;
+
+  // Bidirectional random history (browser-style back/forward)
+  const rndHistory = []; // [{asset, dataUri}, ...]  max 15 entries
+  let rndPos       = -1; // current position in rndHistory
+
+  // Which img element is currently "front"
+  let frontIsA = true;
+
+  // ---- Progress bar (rAF) ----
+  const PROGRESS_DURATION = 60000; // 60 s
+  let progressStart = null;
+  let progressRafId = null;
+
+  function startProgress() {
+    if (progressRafId) cancelAnimationFrame(progressRafId);
+    progressStart = performance.now();
+    function tick(now) {
+      const elapsed = now - progressStart;
+      const pct = Math.min(elapsed / PROGRESS_DURATION * 100, 100);
+      progressBar.style.width = pct + '%';
+      if (pct < 100) {
+        progressRafId = requestAnimationFrame(tick);
+      }
+    }
+    progressRafId = requestAnimationFrame(tick);
+  }
+
+  // ---- Clock ----
+  function updateClock() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    clockEl.textContent = `${hh}:${mm}`;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ---- Date label from asset ----
+  function assetDate(asset) {
+    const raw = asset.localDateTime ?? asset.fileCreatedAt ?? null;
+    return raw ? raw.split('T')[0] : null;
+  }
+
+  function updateDateLabel(asset) {
+    const raw = asset.localDateTime ?? asset.fileCreatedAt ?? null;
+    if (!raw) { dateLabelEl.textContent = ''; return; }
+    const d = new Date(raw);
+    dateLabelEl.textContent = d.toLocaleDateString('de-DE', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+  }
+
+  // ---- Crossfade ----
+  function crossfade(dataUri) {
+    const front = frontIsA ? imgA : imgB;
+    const back  = frontIsA ? imgB : imgA;
+
+    // Load new image into the currently-hidden element
+    back.src = dataUri;
+
+    // Swap z-index and opacity
+    // back comes to front
+    back.style.zIndex   = '2';
+    back.style.opacity  = '1';
+    front.style.zIndex  = '1';
+    front.style.opacity = '0';
+
+    frontIsA = !frontIsA;
+  }
+
+  // ---- Auto-advance timer ----
+  let autoTimer = null;
+  function scheduleAutoAdvance() {
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(goForward, PROGRESS_DURATION);
+  }
+
+  // ---- Status overlay ----
+  let statusTimer = null;
+  function showStatus(msg, { persist = false } = {}) {
+    clearTimeout(statusTimer);
+    statusEl.textContent = msg;
+    statusEl.classList.remove('hidden');
+    if (!persist) statusTimer = setTimeout(() => statusEl.classList.add('hidden'), 4000);
+  }
+  function hideStatus() {
+    clearTimeout(statusTimer);
+    statusEl.classList.add('hidden');
+  }
+
+  // ---- Show a photo (display only, no history side-effects) ----
+  function showPhoto(payload) {
+    currentAsset = payload.asset;
+    dayDate = assetDate(currentAsset);
+    crossfade(payload.dataUri);
+    updateDateLabel(currentAsset);
+    startProgress();
+    scheduleAutoAdvance();
+    hideStatus();
+  }
+
+  // ---- Day-mode indicator ----
+  function setDayIndicator(index, total) {
+    dayIndEl.textContent = `${index} / ${total} that day`;
+    dayIndEl.classList.add('visible');
+  }
+
+  function showDayInfo(asset) {
+    const date = assetDate(asset);
+    fetch(`${PROXY}/day-info?date=${encodeURIComponent(date)}&id=${encodeURIComponent(asset.id)}`)
+      .then(r => r.json())
+      .then(({ index, total }) => setDayIndicator(index, total))
+      .catch(() => {});
+  }
+
+  // ---- API calls ----
+  async function fetchRandom() {
+    const res = await fetch(`${PROXY}/random`);
+    if (!res.ok) throw new Error(`/random ${res.status}`);
+    return res.json();
+  }
+
+  async function fetchSameDay(date, id, dir) {
+    const url = `${PROXY}/same-day?date=${encodeURIComponent(date)}&id=${encodeURIComponent(id)}&dir=${dir}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`/same-day ${res.status}`);
+    return res.json();
+  }
+
+  async function prefetchRandom() {
+    try { prefetchedNext = await fetchRandom(); }
+    catch (e) { prefetchedNext = null; }
+  }
+
+  // ---- Push a random payload into the history stack ----
+  function pushRandom(payload) {
+    // Truncate any forward history when branching
+    rndHistory.splice(rndPos + 1);
+    rndHistory.push({ asset: payload.asset, dataUri: payload.dataUri });
+    if (rndHistory.length > 15) rndHistory.shift();
+    rndPos = rndHistory.length - 1;
+  }
+
+  // ---- Down: go forward in history or fetch new random ----
+  async function goForward() {
+    if (busy) return;
+    busy = true;
+    try {
+      inDayMode = false;
+      let payload;
+      if (rndPos < rndHistory.length - 1) {
+        // Step forward in existing history
+        rndPos++;
+        payload = rndHistory[rndPos];
+      } else {
+        // At the end — fetch a new random photo
+        payload = prefetchedNext ?? await fetchRandom();
+        prefetchedNext = null;
+        pushRandom(payload);
+        prefetchRandom();
+      }
+      showPhoto(payload);
+      showDayInfo(payload.asset);
+    } catch (e) {
+      console.error('goForward:', e);
+      showStatus(`Could not load photo\n${e.message}`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // ---- Up: go back in history ----
+  async function goBack() {
+    if (busy || rndPos <= 0) return;
+    busy = true;
+    try {
+      inDayMode = false;
+      rndPos--;
+      const payload = rndHistory[rndPos];
+      showPhoto(payload);
+      showDayInfo(payload.asset);
+    } catch (e) {
+      console.error('goBack:', e);
+      showStatus(`Could not load photo\n${e.message}`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // ---- Navigate same-day (Left/Right) ----
+  async function goSameDay(dir) {
+    if (busy || !currentAsset) return;
+    busy = true;
+    try {
+      const date = dayDate ?? assetDate(currentAsset);
+      const payload = await fetchSameDay(date, currentAsset.id, dir);
+      inDayMode = true;
+      showPhoto(payload);
+      setDayIndicator(payload.index, payload.total);
+      // Keep this slot's position in sync so Up/Down restores the last Left/Right position
+      if (rndPos >= 0) rndHistory[rndPos] = { asset: payload.asset, dataUri: payload.dataUri };
+    } catch (e) {
+      console.error('goSameDay error:', e);
+      showStatus(`Could not load photo\n${e.message}`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // ---- Keyboard handler ----
+  document.addEventListener('keydown', e => {
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); goForward(); break;
+      case 'ArrowUp':   e.preventDefault(); goBack();    break;
+      case 'ArrowLeft': e.preventDefault(); goSameDay(-1); break;
+      case 'ArrowRight':e.preventDefault(); goSameDay(1);  break;
+    }
+  });
+
+  // ---- Boot sequence ----
+  (async function init() {
+    try {
+      const payload = await fetchRandom();
+      pushRandom(payload);
+      showPhoto(payload);
+      showDayInfo(payload.asset);
+      prefetchRandom();
+    } catch (e) {
+      console.error('init error:', e);
+      showStatus(`${e.message}\n\nRetrying in 5s…`, { persist: true });
+      setTimeout(init, 5000);
+    }
+  })();
+</script>
+</body>
+</html>

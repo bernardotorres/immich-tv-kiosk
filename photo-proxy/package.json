@@ -1,0 +1,18 @@
+{
+  "name": "immich-tv-kiosk-proxy",
+  "version": "1.0.0",
+  "description": "Proxy server for the Immich TV Kiosk — serves random photos and same-day navigation to the webOS app",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node server.test.mjs && node kiosk.test.mjs",
+    "test:server": "node server.test.mjs",
+    "test:kiosk": "node kiosk.test.mjs"
+  },
+  "author": "Bernardo Torres",
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+*.ipk
+.env
+.claude/
+sampleApp/
+hosted/index.html

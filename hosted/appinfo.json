@@ -1,0 +1,10 @@
+{
+  "id": "com.torres.immichscreen",
+  "version": "1.0.0",
+  "vendor": "Bernardo Torres",
+  "type": "web",
+  "main": "index.html",
+  "title": "Immich Display",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png"
+}
