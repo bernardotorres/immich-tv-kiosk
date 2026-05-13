@@ -1,0 +1,10 @@
+- id: tv_kiosk_screensaver
+  alias: TV Kiosk Screensaver
+  description: >
+    Every minute, check if the TV has been idle (home screen or LG Gallery+) for 10 minutes.
+    If so, launch the Immich kiosk. Uses direct webOS polling, not HA state, to avoid stale reads.
+  trigger:
+    - platform: time_pattern
+      minutes: /1
+  action:
+    - service: shell_command.launch_kiosk

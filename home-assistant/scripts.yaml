@@ -1,0 +1,10 @@
+revert_tv_screensaver:
+  alias: "TV: Revert Kiosk Screensaver"
+  description: >
+    Launch LG Gallery+ and disable the kiosk screensaver automation.
+    Re-enable in HA Settings → Automations when ready.
+  sequence:
+    - service: shell_command.launch_gallery
+    - service: automation.turn_off
+      target:
+        entity_id: automation.tv_kiosk_screensaver
