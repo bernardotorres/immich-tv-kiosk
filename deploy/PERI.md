@@ -6,19 +6,21 @@ The webOS app on the TV (`com.torres.immichscreen`) plus the small Node proxy it
 Source is this repo, `~/codes/photoskiosk` — not `~/codes/peri`. Not to be confused with the
 `immich-kiosk` container (`kiosk.lab...`, port 3000), which is a different, unrelated frame.
 
-**Merged with the art gallery (2026-10-18) + playlists & original-language legends (2026-10-20).** The former `com.torres.artgallery` app and its
+**Merged with the art gallery (2026-10-18) + radio stations & original-language legends (2026-10-20).** The former `com.torres.artgallery` app and its
 `art-proxy` (port 3003, never deployed to peri) are folded into this app and this proxy as the
 *Art* mode: green (or `2`) on the remote switches to art, red (or `1`) back to photos, yellow (or
-`3`) toggles audio on/off; blue (or `4`) cycles between audio playlists (`Ambient & Classical`,
-`Pimsleur Polish I`, `Maria Callas`, `DJ Sets`), while `CH ▲` / `CH ▼` (and `←` / `→` in Art mode)
-skips tracks back and forth within the active playlist. Artwork legends are named in the artist's
+`3`) toggles audio on/off. Controls are identical in both modes: `↑` / `↓` changes the picture,
+`←` / `→` switches the track/stream within the active radio station, and `CH ▲` / `CH ▼` (or blue /
+`4`) switches between radio stations (`Ambient & Classical`, `Polish Radio` live streams,
+`Polish Learning` Pimsleur course, `Maria Callas`, `DJ Sets`). Artwork legends are named in the artist's
 original language (German for Caspar David Friedrich, Dutch for Van Gogh). The default art images
 and ambient/classical tracks live next to the proxy on peri, `~/codes/photoskiosk/photo-proxy/{art,tracks}/`,
-synced by `deploy.sh`; `Pimsleur Polish I` reads from `~/Library/books/Polski/Pimsleur/Pimsleur - Polish I`
-(sequential order, resuming last unit and timestamp), `Maria Callas` from `~/Library/musik/callas`,
-and `DJ Sets` from `~/Library/musik/sets`. `~/codes/artgallery` on the Mac is now only
-history and can be deleted; the old app can be removed from the TV with
-`ares-install --device Odeon --remove com.torres.artgallery`.
+synced by `deploy.sh`; `Polish Radio` streams 10 live Polish stations (Radio Nowy Świat, Radio 357,
+Polskie Radio Jedynka/Dwójka/Trójka/24, TOK FM, RMF Classic, RMF FM, Radio ZET); `Polish Learning`
+reads from `~/Library/books/Polski/Pimsleur/Pimsleur - Polish I` (sequential order, resuming last
+unit and timestamp); `Maria Callas` from `~/Library/musik/callas`; and `DJ Sets` from
+`~/Library/musik/sets`. `~/codes/artgallery` on the Mac is now only history and can be deleted; the
+old app can be removed from the TV with `ares-install --device Odeon --remove com.torres.artgallery`.
 
 | Component | Location |
 |---|---|

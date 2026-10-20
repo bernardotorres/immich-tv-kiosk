@@ -1,6 +1,8 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
+import { Readable } from 'stream';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,22 +156,102 @@ function listFiles(dir, exts) {
   } catch { return []; }
 }
 
+const POLISH_RADIO_STREAMS = [
+  { name: 'Radio Nowy Świat',      url: 'https://stream.rcs.revma.com/ypqt40u0x1zuv',                 mode: 'direct' },
+  { name: 'Radio 357',             url: 'https://stream.radio357.pl/',                                mode: 'direct' },
+  { name: 'Polskie Radio Trójka',  url: 'https://stream13.polskieradio.pl/pr3/pr3.sdp/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'Polskie Radio Dwójka',  url: 'https://stream12.polskieradio.pl/pr2/pr2.sdp/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'Polskie Radio Jedynka', url: 'https://stream11.polskieradio.pl/pr1/pr1.sdp/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'Polskie Radio 24',      url: 'http://stream3.polskieradio.pl:8080/;',                      mode: 'ffmpeg' },
+  { name: 'TOK FM',                url: 'https://radiostream.pl/tuba10-1.mp3',                        mode: 'direct' },
+  { name: 'RMF Classic',           url: 'http://195.150.20.242:8000/rmf_classic',                     mode: 'direct' },
+  { name: 'RMF FM',                url: 'http://195.150.20.242:8000/rmf_fm',                          mode: 'direct' },
+  { name: 'Radio ZET',             url: 'https://zt01.cdn.eurozet.pl/zet-net.mp3',                    mode: 'direct' },
+];
+
 const PLAYLIST_DEFS = [
-  { id: 'ambient',  label: 'Ambient & Classical', dir: TRACKS_DIR,   shuffle: true  },
-  { id: 'pimsleur', label: 'Pimsleur Polish I',   dir: PIMSLEUR_DIR, shuffle: false },
-  { id: 'callas',   label: 'Maria Callas',        dir: CALLAS_DIR,   shuffle: true  },
-  { id: 'sets',     label: 'DJ Sets',             dir: SETS_DIR,     shuffle: true  },
+  { id: 'ambient',      label: 'Ambient & Classical', dir: TRACKS_DIR,   shuffle: true,  live: false },
+  { id: 'polish-radio', label: 'Polish Radio',        streams: POLISH_RADIO_STREAMS, shuffle: false, live: true  },
+  { id: 'pimsleur',     label: 'Polish Learning',     dir: PIMSLEUR_DIR, shuffle: false, live: false },
+  { id: 'callas',       label: 'Maria Callas',        dir: CALLAS_DIR,   shuffle: true,  live: false },
+  { id: 'sets',         label: 'DJ Sets',             dir: SETS_DIR,     shuffle: true,  live: false },
 ];
 
 function getPlaylists() {
   const out = [];
   for (const def of PLAYLIST_DEFS) {
+    if (def.streams) {
+      out.push({
+        id: def.id,
+        label: def.label,
+        shuffle: def.shuffle,
+        live: true,
+        tracks: def.streams.map(s => s.name),
+      });
+      continue;
+    }
     const tracks = listFiles(def.dir, AUDIO_EXTS).sort();
     if (tracks.length > 0) {
-      out.push({ id: def.id, label: def.label, shuffle: def.shuffle, dir: def.dir, tracks });
+      out.push({ id: def.id, label: def.label, shuffle: def.shuffle, live: false, dir: def.dir, tracks });
     }
   }
   return out;
+}
+
+async function streamLiveRadio(req, res, streamDef) {
+  if (streamDef.mode === 'direct') {
+    const ac = new AbortController();
+    req.on('close', () => ac.abort());
+    try {
+      const upstream = await fetch(streamDef.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (KioskRadioProxy)' },
+        signal: ac.signal,
+      });
+      if (!upstream.ok || !upstream.body) {
+        sendError(res, 502, `Radio upstream ${upstream.status}`);
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
+        'Cache-Control': 'no-cache, no-store',
+        'Access-Control-Allow-Origin': '*',
+      });
+      const nodeStream = Readable.fromWeb(upstream.body);
+      nodeStream.on('error', () => { try { res.end(); } catch {} });
+      nodeStream.pipe(res);
+    } catch (err) {
+      if (err.name !== 'AbortError' && !res.headersSent) {
+        sendError(res, 502, err.message);
+      }
+    }
+    return;
+  }
+
+  // ffmpeg mode for HLS (.m3u8) and Shoutcast (ICY 200 OK) streams
+  res.writeHead(200, {
+    'Content-Type': 'audio/mpeg',
+    'Cache-Control': 'no-cache, no-store',
+    'Access-Control-Allow-Origin': '*',
+  });
+  const ff = spawn('ffmpeg', [
+    '-nostdin',
+    '-loglevel', 'error',
+    '-reconnect', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_delay_max', '5',
+    '-i', streamDef.url,
+    '-vn',
+    '-acodec', 'libmp3lame',
+    '-b:a', '192k',
+    '-f', 'mp3',
+    '-',
+  ]);
+  ff.stdout.pipe(res);
+  ff.stderr.on('data', d => console.warn(`[radio:${streamDef.name}]`, d.toString().trim()));
+  ff.on('error', () => { try { res.end(); } catch {} });
+  const cleanup = () => { try { ff.kill('SIGTERM'); } catch {} };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
 }
 
 // "Caspar David Friedrich - Der Mönch am Meer.jpg" → { artist, title }
@@ -386,10 +468,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ------------------------------------------------------------------
-  // GET /playlists  — available audio playlists [{ id, label, shuffle, tracks }]
+  // GET /playlists  — available radio stations [{ id, label, shuffle, live, tracks }]
   // ------------------------------------------------------------------
   if (req.method === 'GET' && url.pathname === '/playlists') {
-    const playlists = getPlaylists().map(({ id, label, shuffle, tracks }) => ({ id, label, shuffle, tracks }));
+    const playlists = getPlaylists().map(({ id, label, shuffle, live, tracks }) => ({ id, label, shuffle, live: !!live, tracks }));
     sendJson(res, 200, playlists);
     return;
   }
@@ -403,7 +485,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ------------------------------------------------------------------
-  // GET /track/:playlist/:filename  — stream audio from a named playlist
+  // GET /track/:playlist/:filename  — stream audio or live radio from a station
   // ------------------------------------------------------------------
   const playlistTrack = url.pathname.match(/^\/track\/([^/]+)\/([^/]+)$/);
   if (req.method === 'GET' && playlistTrack) {
@@ -414,6 +496,12 @@ const server = http.createServer(async (req, res) => {
     } catch { sendError(res, 400, 'Bad track path'); return; }
     const pl = PLAYLIST_DEFS.find(p => p.id === playlistId);
     if (!pl) { sendError(res, 404, 'Unknown playlist'); return; }
+    if (pl.streams) {
+      const streamDef = pl.streams.find(s => s.name === filename);
+      if (!streamDef) { sendError(res, 404, 'Unknown radio stream'); return; }
+      await streamLiveRadio(req, res, streamDef);
+      return;
+    }
     streamTrack(req, res, pl.dir, filename);
     return;
   }
@@ -437,7 +525,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`[photo-proxy] listening on http://0.0.0.0:${PORT}`);
   console.log(`[photo-proxy] ART_DIR=${ART_DIR} (${listFiles(ART_DIR, IMAGE_EXTS).length} images)`);
   for (const pl of getPlaylists()) {
-    console.log(`[photo-proxy] playlist "${pl.id}" (${pl.label}): ${pl.tracks.length} tracks in ${pl.dir}`);
+    console.log(`[photo-proxy] station "${pl.id}" (${pl.label}): ${pl.tracks.length} ${pl.live ? 'live streams' : `tracks in ${pl.dir}`}`);
   }
   console.log('[photo-proxy] pre-fetching first random image...');
   startPrefetch();

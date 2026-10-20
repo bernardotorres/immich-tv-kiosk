@@ -243,8 +243,8 @@
     <input id="config-input" type="url" spellcheck="false" autocomplete="off">
     <div id="config-hint">
       Enter → Save &amp; restart &nbsp;·&nbsp; Back/Esc → Cancel<br>
-      <span style="color:#e8657a">●</span> Photos &nbsp;·&nbsp; <span style="color:#6ccf7a">●</span> Art &nbsp;·&nbsp; <span style="color:#f2e05a">●</span> Audio on/off &nbsp;·&nbsp; <span style="color:#6a8ff0">●</span> Playlist<br>
-      1 Photos &nbsp;·&nbsp; 2 Art &nbsp;·&nbsp; 3 Audio on/off &nbsp;·&nbsp; 4 Playlist &nbsp;·&nbsp; CH ▲▼ Track
+      <span style="color:#e8657a">●</span> Photos &nbsp;·&nbsp; <span style="color:#6ccf7a">●</span> Art &nbsp;·&nbsp; <span style="color:#f2e05a">●</span> Audio on/off &nbsp;·&nbsp; <span style="color:#6a8ff0">●</span> Next station<br>
+      ↑↓ Picture &nbsp;·&nbsp; ←→ Track &nbsp;·&nbsp; CH ▲▼ / 4 Station &nbsp;·&nbsp; 1 Photos · 2 Art · 3 Audio
     </div>
   </div>
 </div>
@@ -551,7 +551,7 @@
 
   audio.addEventListener('timeupdate', () => {
     const pl = curPlaylist();
-    if (pl && !pl.shuffle && audio.currentTime > 5 && Math.floor(audio.currentTime) % 5 === 0) {
+    if (pl && !pl.shuffle && !pl.live && audio.currentTime > 5 && Math.floor(audio.currentTime) % 5 === 0) {
       savePlaylistPos(pl, audio.currentTime);
     }
   });
@@ -585,7 +585,7 @@
     if (!pl || !pl.order.length || !musicOn) return;
     pl.idx = ((idx % pl.order.length) + pl.order.length) % pl.order.length;
     const filename = pl.order[pl.idx];
-    const startAt = resume && pl.resumeTime > 5 ? pl.resumeTime : 0;
+    const startAt = (!pl.live && resume && pl.resumeTime > 5) ? pl.resumeTime : 0;
     pl.resumeTime = 0;
     savePlaylistPos(pl, startAt);
     audio.src = `${PROXY}/track/${encodeURIComponent(pl.id)}/${encodeURIComponent(filename)}`;
@@ -612,7 +612,7 @@
   function cyclePlaylist(dir = 1) {
     if (!playlists.length) { showMusicInfo('no tracks'); return; }
     const prev = curPlaylist();
-    if (prev && !prev.shuffle && audio.currentTime > 5) {
+    if (prev && !prev.shuffle && !prev.live && audio.currentTime > 5) {
       prev.resumeTime = audio.currentTime;
       savePlaylistPos(prev, audio.currentTime);
     }
@@ -632,16 +632,20 @@
     localStorage.setItem(MUSIC_KEY, musicOn ? 'on' : 'off');
     const pl = curPlaylist();
     if (!musicOn) {
-      if (pl && !pl.shuffle && audio.currentTime > 5) {
+      if (pl && !pl.shuffle && !pl.live && audio.currentTime > 5) {
         pl.resumeTime = audio.currentTime;
         savePlaylistPos(pl, audio.currentTime);
       }
       audio.pause();
+      if (pl?.live) {
+        audio.removeAttribute('src');
+        audio.load();
+      }
       showMusicInfo('off');
       return;
     }
     if (!pl || !pl.order.length) { showMusicInfo('no tracks'); return; }
-    if (audio.src) {
+    if (audio.src && !pl.live) {
       audio.play().catch(() => {});
       showMusicInfo(formatTrackDisplay(pl));
     } else {
@@ -664,13 +668,13 @@
         const found = order.indexOf(saved.track);
         if (found !== -1) {
           idx = found;
-          if (!raw.shuffle && typeof saved.time === 'number' && saved.time > 5) {
+          if (!raw.shuffle && !raw.live && typeof saved.time === 'number' && saved.time > 5) {
             resumeTime = saved.time;
           }
         }
       }
     } catch {}
-    return { id: raw.id, label: raw.label, shuffle: !!raw.shuffle, order, idx, resumeTime };
+    return { id: raw.id, label: raw.label, shuffle: !!raw.shuffle, live: !!raw.live, order, idx, resumeTime };
   }
 
   async function loadTracks() {
@@ -741,8 +745,8 @@
     if (e.keyCode === GREEN)   { e.preventDefault(); setMode('art');     return; }
     if (e.keyCode === YELLOW)  { e.preventDefault(); toggleMusic();      return; }
     if (e.keyCode === BLUE)    { e.preventDefault(); cyclePlaylist(1);   return; }
-    if (e.keyCode === CH_UP)   { e.preventDefault(); stepTrack(1);       return; }
-    if (e.keyCode === CH_DOWN) { e.preventDefault(); stepTrack(-1);      return; }
+    if (e.keyCode === CH_UP)   { e.preventDefault(); cyclePlaylist(1);   return; }
+    if (e.keyCode === CH_DOWN) { e.preventDefault(); cyclePlaylist(-1);  return; }
     if (e.key === 'MediaTrackNext'     || e.keyCode === 417) { e.preventDefault(); stepTrack(1);  return; }
     if (e.key === 'MediaTrackPrevious' || e.keyCode === 412) { e.preventDefault(); stepTrack(-1); return; }
     if (MEDIA_TOGGLE.has(e.key) || e.keyCode === 179 || e.keyCode === 415 || e.keyCode === 19) {
@@ -750,10 +754,10 @@
     }
 
     switch (e.key) {
-      case 'ArrowDown':  e.preventDefault(); goForward(); break;
-      case 'ArrowUp':    e.preventDefault(); goBack();    break;
-      case 'ArrowLeft':  e.preventDefault(); mode === 'photos' ? goSameDay(-1) : stepTrack(-1); break;
-      case 'ArrowRight': e.preventDefault(); mode === 'photos' ? goSameDay(1)  : stepTrack(1);  break;
+      case 'ArrowDown':  e.preventDefault(); goForward();    break;
+      case 'ArrowUp':    e.preventDefault(); goBack();       break;
+      case 'ArrowLeft':  e.preventDefault(); stepTrack(-1);  break;
+      case 'ArrowRight': e.preventDefault(); stepTrack(1);   break;
       case 'Enter':
       case ' ':          e.preventDefault(); if (mode === 'art') revealLabel(); break;
       case '1':          e.preventDefault(); setMode('photos');  break;

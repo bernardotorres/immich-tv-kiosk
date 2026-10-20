@@ -21,22 +21,22 @@ LG TV (webOS app)  ──── HTTP ────►  Proxy server (Node.js)  �
 
 ## Remote
 
-| Key | Photos mode | Art mode |
-|-----|-------------|----------|
-| ↓ / auto | Next random photo | Next random artwork |
-| ↑ | Previous (history, up to 20 per mode) | Previous |
-| → / ← | Next / previous photo taken the same day | Next / previous track |
-| CH ▲ / CH ▼ | Next / previous track | Next / previous track |
-| OK / Enter | — | Re-show the title + artist label |
-| Red / 1 | Switch to Photos | |
-| Green / 2 | Switch to Art | |
-| Yellow / 3 / Play-Pause | Audio on / off | |
-| Blue / 4 | Cycle audio playlist (Ambient & Classical → Pimsleur Polish I → Maria Callas → DJ Sets) | |
-| 0 | Open the proxy URL settings | |
+| Key | Both modes (Photos & Art) |
+|-----|---------------------------|
+| ↓ / auto | Next random photo or artwork |
+| ↑ | Previous photo or artwork (history, up to 20 per mode) |
+| → / ← | Next / previous track (or live stream / lesson unit) within the current radio station |
+| CH ▲ / CH ▼ | Next / previous radio station |
+| Blue / 4 | Next radio station (`Ambient & Classical` → `Polish Radio` → `Polish Learning` → `Maria Callas` → `DJ Sets`) |
+| Yellow / 3 / Play-Pause | Audio on / off |
+| Red / 1 | Switch to Photos |
+| Green / 2 | Switch to Art |
+| OK / Enter | Re-show the artwork title + artist label (Art mode) |
+| 0 | Open the proxy URL settings |
 
 The colour buttons sit just under the OK ring, within thumb reach; the number pad is at the top of the Magic Remote.
 
-Mode, audio on/off, active playlist, per-playlist position (so sequential courses like Pimsleur Polish I resume on the unit and timestamp where you left off), and the proxy URL are kept in `localStorage`, so they survive reinstalls. Each mode keeps its own history: switching back resumes where that mode was.
+Mode, audio on/off, active radio station, per-station track/position (so live Polish Radio remembers your last stream, and sequential courses like Polish Learning resume on the unit and timestamp where you left off), and the proxy URL are kept in `localStorage`, so they survive reinstalls. Each mode keeps its own history: switching back resumes where that mode was.
 
 Photos: the day counter (`N / M that day`) sits top-left and the date bottom-centre. Art: the label fades out after 12 seconds. Both: the playlist + track name shows bottom-right for 5 seconds on each track or playlist change; the bottom progress bar shows time until the next auto-advance.
 

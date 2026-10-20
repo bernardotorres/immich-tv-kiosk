@@ -146,13 +146,24 @@ await test('returns a non-empty array of playlists with tracks', async () => {
   }
 });
 
-await test('/track/:playlist/:name streams audio from each playlist', async () => {
+await test('/track/:playlist/:name streams audio from each playlist (files + live radio)', async () => {
   for (const pl of playlists) {
     const url = `${BASE}/track/${encodeURIComponent(pl.id)}/${encodeURIComponent(pl.tracks[0])}`;
-    const head = await fetch(url, { headers: { Range: 'bytes=0-99' } });
-    assert.equal(head.status, 206, `failed on playlist ${pl.id}`);
-    assert.match(head.headers.get('content-type'), /^audio\//);
-    assert.equal((await head.arrayBuffer()).byteLength, 100);
+    if (pl.live) {
+      const ac = new AbortController();
+      const res = await fetch(url, { signal: ac.signal });
+      assert.equal(res.status, 200, `failed on live station ${pl.id}`);
+      assert.match(res.headers.get('content-type'), /^audio\//);
+      const reader = res.body.getReader();
+      const { value } = await reader.read();
+      assert.ok(value && value.byteLength > 0, `no bytes from live station ${pl.id}`);
+      ac.abort();
+    } else {
+      const head = await fetch(url, { headers: { Range: 'bytes=0-99' } });
+      assert.equal(head.status, 206, `failed on playlist ${pl.id}`);
+      assert.match(head.headers.get('content-type'), /^audio\//);
+      assert.equal((await head.arrayBuffer()).byteLength, 100);
+    }
   }
 });
 
