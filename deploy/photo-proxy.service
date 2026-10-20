@@ -1,0 +1,13 @@
+[Unit]
+Description=Proxy for the TV kiosk webOS app on Odeon (Immich photos, art gallery, music)
+After=network-online.target
+
+[Service]
+EnvironmentFile=%h/codes/photoskiosk/photo-proxy/.env
+WorkingDirectory=%h/codes/photoskiosk/photo-proxy
+ExecStart=/home/bernardo/.nvm/versions/node/v24.14.1/bin/node %h/codes/photoskiosk/photo-proxy/server.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

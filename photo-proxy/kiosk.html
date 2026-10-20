@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Photo Kiosk</title>
+<title>Kiosk</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -15,28 +15,40 @@
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   }
 
+  /* ---- Blurred ambient background (art mode only) ---- */
+  #bg-a, #bg-b {
+    position: fixed;
+    inset: -8%;
+    width: 116%; height: 116%;
+    object-fit: cover;
+    filter: blur(48px) brightness(0.3) saturate(0.7);
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+
   /* ---- Crossfade images ---- */
   #img-a, #img-b {
     position: fixed;
     inset: 0;
     width: 100%; height: 100%;
     object-fit: contain;
+    z-index: 3;
+    opacity: 0;
     transition: opacity 0.8s ease;
   }
-  #img-a { opacity: 0; z-index: 1; }
-  #img-b { opacity: 0; z-index: 2; }
 
   /* ---- Overlays (above images) ---- */
   .overlay {
     position: fixed;
     z-index: 10;
-    color: #fff;
+    color: rgba(255,255,255,0.92);
     text-shadow: 0 1px 6px rgba(0,0,0,0.8);
     pointer-events: none;
     user-select: none;
   }
 
-  /* Clock — top right */
+  /* Clock — top right, both modes */
   #clock {
     top: 24px; right: 32px;
     font-size: 52px;
@@ -44,7 +56,7 @@
     letter-spacing: 2px;
   }
 
-  /* Same-day indicator — top left */
+  /* Same-day indicator — top left (photos) */
   #day-indicator {
     top: 24px; left: 32px;
     font-size: 26px;
@@ -55,7 +67,7 @@
   }
   #day-indicator.visible { opacity: 1; }
 
-  /* Date label — bottom center */
+  /* Date label — bottom center (photos) */
   #date-label {
     bottom: 20px; left: 50%;
     transform: translateX(-50%);
@@ -63,6 +75,56 @@
     font-weight: 300;
     letter-spacing: 1px;
     white-space: nowrap;
+  }
+
+  /* Art label — bottom left (art) */
+  #art-label {
+    bottom: 48px; left: 56px;
+    opacity: 1;
+    transition: opacity 0.6s ease;
+  }
+  #art-label.hidden { opacity: 0; }
+  #art-title {
+    font-size: 30px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+    margin-bottom: 6px;
+    max-width: 600px;
+  }
+  #art-artist {
+    font-size: 20px;
+    font-weight: 200;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.9);
+    color: rgba(255,255,255,0.7);
+    max-width: 600px;
+  }
+
+  body[data-mode="art"]    #day-indicator,
+  body[data-mode="art"]    #date-label,
+  body[data-mode="photos"] #art-label { display: none; }
+
+  /* Music — bottom right, both modes */
+  #music-info {
+    bottom: 22px; right: 36px;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 40%;
+  }
+  #music-info.visible { opacity: 1; }
+  #music-note { font-size: 20px; opacity: 0.8; flex-shrink: 0; }
+  #music-track-name {
+    font-size: 18px;
+    font-weight: 200;
+    letter-spacing: 0.5px;
+    color: rgba(255,255,255,0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Status / error overlay — centered */
@@ -74,6 +136,7 @@
     letter-spacing: 1px;
     text-align: center;
     line-height: 1.6;
+    white-space: pre-line;
     transition: opacity 0.5s ease;
     max-width: 80%;
   }
@@ -88,47 +151,158 @@
     background: rgba(255,255,255,0.55);
     z-index: 11;
   }
+
+  /* ---- Config overlay ---- */
+  #config-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #config-overlay.hidden { display: none; }
+  #config-panel {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 52px 64px;
+    min-width: 640px;
+    color: #fff;
+  }
+  #config-panel h2 {
+    font-size: 26px;
+    font-weight: 200;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 40px;
+    opacity: 0.85;
+  }
+  #config-label {
+    font-size: 15px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 10px;
+  }
+  #config-input {
+    display: block;
+    width: 100%;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 8px;
+    padding: 18px 22px;
+    font-size: 22px;
+    font-family: inherit;
+    color: #fff;
+    letter-spacing: 0.5px;
+    outline: none;
+    margin-bottom: 28px;
+    cursor: auto;
+  }
+  #config-input:focus { border-color: rgba(255,255,255,0.65); }
+  #config-hint {
+    font-size: 15px;
+    font-weight: 200;
+    color: rgba(255,255,255,0.4);
+    text-align: center;
+    letter-spacing: 0.5px;
+    line-height: 1.8;
+  }
 </style>
 </head>
-<body>
+<body data-mode="photos">
 
+<img id="bg-a" src="" alt="">
+<img id="bg-b" src="" alt="">
 <img id="img-a" src="" alt="">
 <img id="img-b" src="" alt="">
 
 <div class="overlay" id="clock">00:00</div>
 <div class="overlay" id="day-indicator"></div>
 <div class="overlay" id="date-label"></div>
+<div class="overlay" id="art-label">
+  <div id="art-title"></div>
+  <div id="art-artist"></div>
+</div>
+<div class="overlay" id="music-info">
+  <span id="music-note">♪</span>
+  <span id="music-track-name"></span>
+</div>
 <div class="overlay" id="status">Loading…</div>
 <div id="progress-bar"></div>
 
+<!-- Config overlay — press 0 on the remote -->
+<div id="config-overlay" class="hidden">
+  <div id="config-panel">
+    <h2>Kiosk</h2>
+    <div id="config-label">Proxy URL</div>
+    <input id="config-input" type="url" spellcheck="false" autocomplete="off">
+    <div id="config-hint">
+      Enter → Save &amp; restart &nbsp;·&nbsp; Back/Esc → Cancel<br>
+      <span style="color:#e8657a">●</span> Photos &nbsp;·&nbsp; <span style="color:#6ccf7a">●</span> Art &nbsp;·&nbsp; <span style="color:#f2e05a">●</span> Audio on/off &nbsp;·&nbsp; <span style="color:#6a8ff0">●</span> Playlist<br>
+      1 Photos &nbsp;·&nbsp; 2 Art &nbsp;·&nbsp; 3 Audio on/off &nbsp;·&nbsp; 4 Playlist &nbsp;·&nbsp; CH ▲▼ Track
+    </div>
+  </div>
+</div>
+
 <script>
-  const PROXY = 'http://192.168.178.250:3002';
+  // ---- Config (localStorage survives app reinstalls; ?proxy= / ?mode= / ?playlist= override for testing) ----
+  const PROXY_KEY           = 'kiosk_proxy';
+  const MODE_KEY            = 'kiosk_mode';
+  const MUSIC_KEY           = 'kiosk_music';
+  const PLAYLIST_KEY        = 'kiosk_playlist';
+  const PLAYLIST_POS_PREFIX = 'kiosk_playlist_pos_';
+  const DEFAULT_PROXY       = 'http://192.168.178.250:3002';
+  const params              = new URLSearchParams(location.search);
+
+  let PROXY = (params.get('proxy') ?? localStorage.getItem(PROXY_KEY) ?? DEFAULT_PROXY).replace(/\/$/, '');
+
+  // ---- Display constants ----
+  const DISPLAY_DURATION = 60_000;
+  const MUSIC_VOLUME     = 0.45;
+  const LABEL_TIMEOUT    = 12_000;
+  const MUSIC_INFO_SHOW  = 5_000;
+  const MAX_HIST         = 20;
+  const RETRY_DELAY      = 10_000;
 
   // ---- DOM refs ----
+  const bgA         = document.getElementById('bg-a');
+  const bgB         = document.getElementById('bg-b');
   const imgA        = document.getElementById('img-a');
   const imgB        = document.getElementById('img-b');
   const clockEl     = document.getElementById('clock');
   const dayIndEl    = document.getElementById('day-indicator');
   const dateLabelEl = document.getElementById('date-label');
+  const artLabelEl  = document.getElementById('art-label');
+  const artTitleEl  = document.getElementById('art-title');
+  const artArtistEl = document.getElementById('art-artist');
+  const musicInfoEl = document.getElementById('music-info');
+  const musicNameEl = document.getElementById('music-track-name');
   const progressBar = document.getElementById('progress-bar');
   const statusEl    = document.getElementById('status');
 
-  // ---- State ----
-  let currentAsset   = null;
-  let dayDate        = null;
-  let inDayMode      = false;
-  let prefetchedNext = null;
-  let busy           = false;
+  // ---- Modes ----
+  // Each mode has its own history so switching back resumes where it was.
+  const MODES = {
+    photos: { label: 'Photos',      noun: 'photo',   ambient: false, fetch: fetchRandomPhoto, show: showPhoto },
+    art:    { label: 'Art gallery', noun: 'artwork', ambient: true,  fetch: fetchRandomArt,   show: showArt   },
+  };
+  const states = { photos: newState(), art: newState() };
+  function newState() { return { history: [], pos: -1, prefetched: null, current: null }; }
 
-  // Bidirectional random history (browser-style back/forward)
-  const rndHistory = []; // [{asset, dataUri}, ...]  max 15 entries
-  let rndPos       = -1; // current position in rndHistory
+  let mode = params.get('mode') ?? localStorage.getItem(MODE_KEY) ?? 'photos';
+  if (!MODES[mode]) mode = 'photos';
+  const state = () => states[mode];
 
-  // Which img element is currently "front"
   let frontIsA = true;
+  let busy     = false;
+  let nav      = 0;     // bumped on every mode switch; an in-flight fetch for an older nav is dropped
 
   // ---- Progress bar (rAF) ----
-  const PROGRESS_DURATION = 60000; // 60 s
   let progressStart = null;
   let progressRafId = null;
 
@@ -136,12 +310,9 @@
     if (progressRafId) cancelAnimationFrame(progressRafId);
     progressStart = performance.now();
     function tick(now) {
-      const elapsed = now - progressStart;
-      const pct = Math.min(elapsed / PROGRESS_DURATION * 100, 100);
+      const pct = Math.min((now - progressStart) / DISPLAY_DURATION * 100, 100);
       progressBar.style.width = pct + '%';
-      if (pct < 100) {
-        progressRafId = requestAnimationFrame(tick);
-      }
+      if (pct < 100) progressRafId = requestAnimationFrame(tick);
     }
     progressRafId = requestAnimationFrame(tick);
   }
@@ -149,14 +320,55 @@
   // ---- Clock ----
   function updateClock() {
     const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    clockEl.textContent = `${hh}:${mm}`;
+    clockEl.textContent =
+      String(now.getHours()).padStart(2, '0') + ':' +
+      String(now.getMinutes()).padStart(2, '0');
   }
   updateClock();
   setInterval(updateClock, 1000);
 
-  // ---- Date label from asset ----
+  // ---- Crossfade ----
+  function crossfade(dataUri, ambient) {
+    const [bgFront, imgFront, bgBack, imgBack] = frontIsA
+      ? [bgA, imgA, bgB, imgB]
+      : [bgB, imgB, bgA, imgA];
+
+    imgBack.src = dataUri;
+    imgBack.style.zIndex   = '4';  imgFront.style.zIndex  = '3';
+    imgBack.style.opacity  = '1';  imgFront.style.opacity = '0';
+
+    if (ambient) {
+      bgBack.src = dataUri;
+      bgBack.style.zIndex  = '2';  bgFront.style.zIndex  = '1';
+      bgBack.style.opacity = '1';  bgFront.style.opacity = '0';
+    } else {
+      bgBack.style.opacity = '0';  bgFront.style.opacity = '0';
+    }
+
+    frontIsA = !frontIsA;
+  }
+
+  // ---- Status overlay ----
+  let statusTimer = null;
+  function showStatus(msg, { persist = false, ms = 4000 } = {}) {
+    clearTimeout(statusTimer);
+    statusEl.textContent = msg;
+    statusEl.classList.remove('hidden');
+    if (!persist) statusTimer = setTimeout(() => statusEl.classList.add('hidden'), ms);
+  }
+  function hideStatus() {
+    clearTimeout(statusTimer);
+    statusEl.classList.add('hidden');
+  }
+
+  // ---- Auto-advance timer ----
+  let autoTimer = null;
+  function scheduleAutoAdvance(delay = DISPLAY_DURATION) {
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(goForward, delay);
+  }
+
+  // ---- Photos mode ----
   function assetDate(asset) {
     const raw = asset.localDateTime ?? asset.fileCreatedAt ?? null;
     return raw ? raw.split('T')[0] : null;
@@ -165,62 +377,11 @@
   function updateDateLabel(asset) {
     const raw = asset.localDateTime ?? asset.fileCreatedAt ?? null;
     if (!raw) { dateLabelEl.textContent = ''; return; }
-    const d = new Date(raw);
-    dateLabelEl.textContent = d.toLocaleDateString('de-DE', {
+    dateLabelEl.textContent = new Date(raw).toLocaleDateString('de-DE', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
   }
 
-  // ---- Crossfade ----
-  function crossfade(dataUri) {
-    const front = frontIsA ? imgA : imgB;
-    const back  = frontIsA ? imgB : imgA;
-
-    // Load new image into the currently-hidden element
-    back.src = dataUri;
-
-    // Swap z-index and opacity
-    // back comes to front
-    back.style.zIndex   = '2';
-    back.style.opacity  = '1';
-    front.style.zIndex  = '1';
-    front.style.opacity = '0';
-
-    frontIsA = !frontIsA;
-  }
-
-  // ---- Auto-advance timer ----
-  let autoTimer = null;
-  function scheduleAutoAdvance() {
-    clearTimeout(autoTimer);
-    autoTimer = setTimeout(goForward, PROGRESS_DURATION);
-  }
-
-  // ---- Status overlay ----
-  let statusTimer = null;
-  function showStatus(msg, { persist = false } = {}) {
-    clearTimeout(statusTimer);
-    statusEl.textContent = msg;
-    statusEl.classList.remove('hidden');
-    if (!persist) statusTimer = setTimeout(() => statusEl.classList.add('hidden'), 4000);
-  }
-  function hideStatus() {
-    clearTimeout(statusTimer);
-    statusEl.classList.add('hidden');
-  }
-
-  // ---- Show a photo (display only, no history side-effects) ----
-  function showPhoto(payload) {
-    currentAsset = payload.asset;
-    dayDate = assetDate(currentAsset);
-    crossfade(payload.dataUri);
-    updateDateLabel(currentAsset);
-    startProgress();
-    scheduleAutoAdvance();
-    hideStatus();
-  }
-
-  // ---- Day-mode indicator ----
   function setDayIndicator(index, total) {
     dayIndEl.textContent = `${index} / ${total} that day`;
     dayIndEl.classList.add('visible');
@@ -230,12 +391,16 @@
     const date = assetDate(asset);
     fetch(`${PROXY}/day-info?date=${encodeURIComponent(date)}&id=${encodeURIComponent(asset.id)}`)
       .then(r => r.json())
-      .then(({ index, total }) => setDayIndicator(index, total))
+      .then(({ index, total }) => { if (mode === 'photos') setDayIndicator(index, total); })
       .catch(() => {});
   }
 
-  // ---- API calls ----
-  async function fetchRandom() {
+  function showPhoto(payload) {
+    updateDateLabel(payload.asset);
+    showDayInfo(payload.asset);
+  }
+
+  async function fetchRandomPhoto() {
     const res = await fetch(`${PROXY}/random`);
     if (!res.ok) throw new Error(`/random ${res.status}`);
     return res.json();
@@ -248,110 +413,395 @@
     return res.json();
   }
 
-  async function prefetchRandom() {
-    try { prefetchedNext = await fetchRandom(); }
-    catch (e) { prefetchedNext = null; }
+  // Left/Right in photos mode: step through the photos taken the same day
+  async function goSameDay(dir) {
+    const st = states.photos;
+    if (busy || !st.current) return;
+    busy = true;
+    const my = nav;
+    try {
+      const asset   = st.current.asset;
+      const payload = await fetchSameDay(assetDate(asset), asset.id, dir);
+      if (my !== nav) return;
+      showItem(payload);
+      setDayIndicator(payload.index, payload.total);
+      // Keep this slot in sync so Up/Down restores the last Left/Right position
+      if (st.pos >= 0) st.history[st.pos] = payload;
+    } catch (e) {
+      console.error('goSameDay:', e);
+      if (my === nav) showStatus(`Could not load photo\n${e.message}`);
+    } finally {
+      if (my === nav) busy = false;
+    }
   }
 
-  // ---- Push a random payload into the history stack ----
-  function pushRandom(payload) {
-    // Truncate any forward history when branching
-    rndHistory.splice(rndPos + 1);
-    rndHistory.push({ asset: payload.asset, dataUri: payload.dataUri });
-    if (rndHistory.length > 15) rndHistory.shift();
-    rndPos = rndHistory.length - 1;
+  // ---- Art mode ----
+  let labelTimer = null;
+  function revealLabel() {
+    artLabelEl.classList.remove('hidden');
+    clearTimeout(labelTimer);
+    labelTimer = setTimeout(() => artLabelEl.classList.add('hidden'), LABEL_TIMEOUT);
   }
 
-  // ---- Down: go forward in history or fetch new random ----
+  function showArt(payload) {
+    artTitleEl.textContent  = payload.title  || '';
+    artArtistEl.textContent = payload.artist || '';
+    revealLabel();
+  }
+
+  async function fetchRandomArt() {
+    const res = await fetch(`${PROXY}/art/random`);
+    if (!res.ok) {
+      let msg = `/art/random ${res.status}`;
+      try { msg = (await res.json()).error ?? msg; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  // ---- Shared navigation ----
+  function showItem(payload) {
+    const m  = MODES[mode];
+    state().current = payload;
+    crossfade(payload.dataUri, m.ambient);
+    m.show(payload);
+    startProgress();
+    scheduleAutoAdvance();
+    hideStatus();
+  }
+
+  function pushHistory(st, payload) {
+    st.history.splice(st.pos + 1);
+    st.history.push(payload);
+    if (st.history.length > MAX_HIST) st.history.shift();
+    st.pos = st.history.length - 1;
+  }
+
+  async function prefetch(st, m) {
+    try { st.prefetched = await m.fetch(); } catch { st.prefetched = null; }
+  }
+
   async function goForward() {
     if (busy) return;
     busy = true;
+    const my = nav, st = state(), m = MODES[mode];
     try {
-      inDayMode = false;
       let payload;
-      if (rndPos < rndHistory.length - 1) {
-        // Step forward in existing history
-        rndPos++;
-        payload = rndHistory[rndPos];
+      if (st.pos < st.history.length - 1) {
+        st.pos++;
+        payload = st.history[st.pos];
       } else {
-        // At the end — fetch a new random photo
-        payload = prefetchedNext ?? await fetchRandom();
-        prefetchedNext = null;
-        pushRandom(payload);
-        prefetchRandom();
+        payload = st.prefetched ?? await m.fetch();
+        if (my !== nav) return;
+        st.prefetched = null;
+        pushHistory(st, payload);
+        prefetch(st, m);
       }
-      showPhoto(payload);
-      showDayInfo(payload.asset);
+      showItem(payload);
     } catch (e) {
       console.error('goForward:', e);
-      showStatus(`Could not load photo\n${e.message}`);
+      if (my !== nav) return;
+      showStatus(`Could not load ${m.noun}\n${e.message}\n\nProxy: ${PROXY}\nPress 0 to change · Retrying in ${RETRY_DELAY / 1000} s…`, { persist: true });
+      scheduleAutoAdvance(RETRY_DELAY);
     } finally {
-      busy = false;
+      if (my === nav) busy = false;
     }
   }
 
-  // ---- Up: go back in history ----
-  async function goBack() {
-    if (busy || rndPos <= 0) return;
-    busy = true;
+  function goBack() {
+    const st = state();
+    if (busy || st.pos <= 0) return;
+    st.pos--;
+    showItem(st.history[st.pos]);
+  }
+
+  function setMode(next, { announce = true } = {}) {
+    if (!MODES[next]) return;
+    mode = next;
+    localStorage.setItem(MODE_KEY, mode);
+    document.body.dataset.mode = mode;
+    nav++;            // drop whatever the previous mode was still fetching
+    busy = false;
+    clearTimeout(autoTimer);
+    if (announce) showStatus(MODES[mode].label, { ms: 1500 });
+    const st = state();
+    if (st.pos >= 0) showItem(st.history[st.pos]);
+    else goForward();
+  }
+
+  // ---- Music / Playlists (both modes) ----
+  let playlists   = [];   // [{ id, label, shuffle, order: [...], idx, resumeTime }]
+  let playlistIdx = 0;
+  let musicTimer  = null;
+  let musicOn     = localStorage.getItem(MUSIC_KEY) !== 'off';
+  const audio     = new Audio();
+  audio.volume    = MUSIC_VOLUME;
+
+  const curPlaylist = () => playlists[playlistIdx] ?? null;
+
+  function savePlaylistPos(pl, time = 0) {
+    if (!pl || !pl.order.length) return;
     try {
-      inDayMode = false;
-      rndPos--;
-      const payload = rndHistory[rndPos];
-      showPhoto(payload);
-      showDayInfo(payload.asset);
-    } catch (e) {
-      console.error('goBack:', e);
-      showStatus(`Could not load photo\n${e.message}`);
-    } finally {
-      busy = false;
-    }
+      localStorage.setItem(PLAYLIST_POS_PREFIX + pl.id, JSON.stringify({
+        track: pl.order[pl.idx],
+        time: Math.floor(time || 0),
+      }));
+    } catch {}
   }
 
-  // ---- Navigate same-day (Left/Right) ----
-  async function goSameDay(dir) {
-    if (busy || !currentAsset) return;
-    busy = true;
-    try {
-      const date = dayDate ?? assetDate(currentAsset);
-      const payload = await fetchSameDay(date, currentAsset.id, dir);
-      inDayMode = true;
-      showPhoto(payload);
-      setDayIndicator(payload.index, payload.total);
-      // Keep this slot's position in sync so Up/Down restores the last Left/Right position
-      if (rndPos >= 0) rndHistory[rndPos] = { asset: payload.asset, dataUri: payload.dataUri };
-    } catch (e) {
-      console.error('goSameDay error:', e);
-      showStatus(`Could not load photo\n${e.message}`);
-    } finally {
-      busy = false;
-    }
-  }
-
-  // ---- Keyboard handler ----
-  document.addEventListener('keydown', e => {
-    switch (e.key) {
-      case 'ArrowDown': e.preventDefault(); goForward(); break;
-      case 'ArrowUp':   e.preventDefault(); goBack();    break;
-      case 'ArrowLeft': e.preventDefault(); goSameDay(-1); break;
-      case 'ArrowRight':e.preventDefault(); goSameDay(1);  break;
+  audio.addEventListener('timeupdate', () => {
+    const pl = curPlaylist();
+    if (pl && !pl.shuffle && audio.currentTime > 5 && Math.floor(audio.currentTime) % 5 === 0) {
+      savePlaylistPos(pl, audio.currentTime);
     }
   });
 
-  // ---- Boot sequence ----
-  (async function init() {
-    try {
-      const payload = await fetchRandom();
-      pushRandom(payload);
-      showPhoto(payload);
-      showDayInfo(payload.asset);
-      prefetchRandom();
-    } catch (e) {
-      console.error('init error:', e);
-      showStatus(`${e.message}\n\nRetrying in 5s…`, { persist: true });
-      setTimeout(init, 5000);
+  audio.addEventListener('ended', () => {
+    const pl = curPlaylist();
+    if (pl?.order.length) stepTrack(1);
+  });
+  audio.addEventListener('error', () => {
+    const pl = curPlaylist();
+    if (!pl) return;
+    console.error('audio error:', pl.id, pl.order[pl.idx]);
+    if (pl.order.length > 1) stepTrack(1);
+  });
+
+  function formatTrackDisplay(pl) {
+    if (!pl || !pl.order.length) return '';
+    const clean = pl.order[pl.idx].replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+    return playlists.length > 1 ? `${pl.label} · ${clean}` : clean;
+  }
+
+  function showMusicInfo(text) {
+    musicNameEl.textContent = text;
+    musicInfoEl.classList.add('visible');
+    clearTimeout(musicTimer);
+    musicTimer = setTimeout(() => musicInfoEl.classList.remove('visible'), MUSIC_INFO_SHOW);
+  }
+
+  function playTrack(idx, { resume = false } = {}) {
+    const pl = curPlaylist();
+    if (!pl || !pl.order.length || !musicOn) return;
+    pl.idx = ((idx % pl.order.length) + pl.order.length) % pl.order.length;
+    const filename = pl.order[pl.idx];
+    const startAt = resume && pl.resumeTime > 5 ? pl.resumeTime : 0;
+    pl.resumeTime = 0;
+    savePlaylistPos(pl, startAt);
+    audio.src = `${PROXY}/track/${encodeURIComponent(pl.id)}/${encodeURIComponent(filename)}`;
+    if (startAt > 0) {
+      const onLoaded = () => {
+        if (startAt < (audio.duration || Infinity) - 5) audio.currentTime = startAt;
+      };
+      audio.addEventListener('loadedmetadata', onLoaded, { once: true });
     }
-  })();
+    audio.play().catch(e => console.warn('audio play:', e.message));
+    showMusicInfo(formatTrackDisplay(pl));
+  }
+
+  function stepTrack(dir) {
+    const pl = curPlaylist();
+    if (!pl || !pl.order.length) return;
+    if (!musicOn) {
+      musicOn = true;
+      localStorage.setItem(MUSIC_KEY, 'on');
+    }
+    playTrack(pl.idx + dir, { resume: false });
+  }
+
+  function cyclePlaylist(dir = 1) {
+    if (!playlists.length) { showMusicInfo('no tracks'); return; }
+    const prev = curPlaylist();
+    if (prev && !prev.shuffle && audio.currentTime > 5) {
+      prev.resumeTime = audio.currentTime;
+      savePlaylistPos(prev, audio.currentTime);
+    }
+    playlistIdx = ((playlistIdx + dir) % playlists.length + playlists.length) % playlists.length;
+    const pl = curPlaylist();
+    localStorage.setItem(PLAYLIST_KEY, pl.id);
+    if (!musicOn) {
+      musicOn = true;
+      localStorage.setItem(MUSIC_KEY, 'on');
+    }
+    showStatus(`♪ ${pl.label}`, { ms: 1600 });
+    playTrack(pl.idx, { resume: true });
+  }
+
+  function toggleMusic() {
+    musicOn = !musicOn;
+    localStorage.setItem(MUSIC_KEY, musicOn ? 'on' : 'off');
+    const pl = curPlaylist();
+    if (!musicOn) {
+      if (pl && !pl.shuffle && audio.currentTime > 5) {
+        pl.resumeTime = audio.currentTime;
+        savePlaylistPos(pl, audio.currentTime);
+      }
+      audio.pause();
+      showMusicInfo('off');
+      return;
+    }
+    if (!pl || !pl.order.length) { showMusicInfo('no tracks'); return; }
+    if (audio.src) {
+      audio.play().catch(() => {});
+      showMusicInfo(formatTrackDisplay(pl));
+    } else {
+      playTrack(pl.idx, { resume: true });
+    }
+  }
+
+  function initPlaylistOrder(raw) {
+    const order = [...raw.tracks];
+    if (raw.shuffle) {
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+    }
+    let idx = 0, resumeTime = 0;
+    try {
+      const saved = JSON.parse(localStorage.getItem(PLAYLIST_POS_PREFIX + raw.id) || 'null');
+      if (saved && saved.track) {
+        const found = order.indexOf(saved.track);
+        if (found !== -1) {
+          idx = found;
+          if (!raw.shuffle && typeof saved.time === 'number' && saved.time > 5) {
+            resumeTime = saved.time;
+          }
+        }
+      }
+    } catch {}
+    return { id: raw.id, label: raw.label, shuffle: !!raw.shuffle, order, idx, resumeTime };
+  }
+
+  async function loadTracks() {
+    try {
+      let list = null;
+      try {
+        const res = await fetch(`${PROXY}/playlists`);
+        if (res.ok) list = await res.json();
+      } catch {}
+      if (!Array.isArray(list) || !list.length) {
+        const res = await fetch(`${PROXY}/tracks`);
+        const flat = await res.json();
+        if (Array.isArray(flat) && flat.length) {
+          list = [{ id: 'ambient', label: 'Ambient & Classical', shuffle: true, tracks: flat }];
+        }
+      }
+      if (!Array.isArray(list) || !list.length) return;
+      playlists = list.filter(p => Array.isArray(p.tracks) && p.tracks.length > 0).map(initPlaylistOrder);
+      if (!playlists.length) return;
+      const wantedId = params.get('playlist') ?? localStorage.getItem(PLAYLIST_KEY);
+      const foundIdx = playlists.findIndex(p => p.id === wantedId);
+      playlistIdx = foundIdx !== -1 ? foundIdx : 0;
+      playTrack(curPlaylist().idx, { resume: true });
+    } catch (e) { console.warn('loadTracks:', e.message); }
+  }
+
+  // ---- Config overlay ----
+  const configOverlay = document.getElementById('config-overlay');
+  const configInput   = document.getElementById('config-input');
+  let inConfig = false;
+
+  function openConfig() {
+    inConfig = true;
+    configInput.value = PROXY;
+    configOverlay.classList.remove('hidden');
+    setTimeout(() => configInput.focus(), 50); // slight delay so the webOS keyboard opens
+  }
+  function closeConfig() {
+    inConfig = false;
+    configOverlay.classList.add('hidden');
+    configInput.blur();
+  }
+  function saveConfig() {
+    const val = configInput.value.trim().replace(/\/$/, '');
+    if (!val) return;
+    localStorage.setItem(PROXY_KEY, val);
+    location.reload();
+  }
+
+  // ---- Keyboard ----
+  // webOS remote: CH up/down are keyCode 427/428, Back is 461, the colour buttons 403-406
+  // (red, green, yellow, blue; within thumb reach, unlike the number pad); play/pause arrive as media keys.
+  const CH_UP = 427, CH_DOWN = 428, BACK = 461;
+  const RED = 403, GREEN = 404, YELLOW = 405, BLUE = 406;
+  const MEDIA_TOGGLE = new Set(['MediaPlayPause', 'MediaPlay', 'MediaPause']);
+
+  document.addEventListener('keydown', e => {
+    if (inConfig) {
+      if (e.key === 'Enter') { e.preventDefault(); saveConfig(); }
+      if (e.key === 'Escape' || e.keyCode === BACK) { e.preventDefault(); closeConfig(); }
+      return;
+    }
+
+    // A desktop browser blocks autoplay until the first key press; retry then.
+    if (musicOn && playlists.length && audio.paused && audio.src) audio.play().catch(() => {});
+
+    if (e.keyCode === RED)     { e.preventDefault(); setMode('photos');  return; }
+    if (e.keyCode === GREEN)   { e.preventDefault(); setMode('art');     return; }
+    if (e.keyCode === YELLOW)  { e.preventDefault(); toggleMusic();      return; }
+    if (e.keyCode === BLUE)    { e.preventDefault(); cyclePlaylist(1);   return; }
+    if (e.keyCode === CH_UP)   { e.preventDefault(); stepTrack(1);       return; }
+    if (e.keyCode === CH_DOWN) { e.preventDefault(); stepTrack(-1);      return; }
+    if (e.key === 'MediaTrackNext'     || e.keyCode === 417) { e.preventDefault(); stepTrack(1);  return; }
+    if (e.key === 'MediaTrackPrevious' || e.keyCode === 412) { e.preventDefault(); stepTrack(-1); return; }
+    if (MEDIA_TOGGLE.has(e.key) || e.keyCode === 179 || e.keyCode === 415 || e.keyCode === 19) {
+      e.preventDefault(); toggleMusic(); return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':  e.preventDefault(); goForward(); break;
+      case 'ArrowUp':    e.preventDefault(); goBack();    break;
+      case 'ArrowLeft':  e.preventDefault(); mode === 'photos' ? goSameDay(-1) : stepTrack(-1); break;
+      case 'ArrowRight': e.preventDefault(); mode === 'photos' ? goSameDay(1)  : stepTrack(1);  break;
+      case 'Enter':
+      case ' ':          e.preventDefault(); if (mode === 'art') revealLabel(); break;
+      case '1':          e.preventDefault(); setMode('photos');  break;
+      case '2':          e.preventDefault(); setMode('art');     break;
+      case '3':          e.preventDefault(); toggleMusic();      break;
+      case '4':          e.preventDefault(); cyclePlaylist(1);   break;
+      case '0':          e.preventDefault(); openConfig();       break;
+      case 'Escape':     e.preventDefault();                     break;
+    }
+  });
+
+  // ---- System screensaver refusal ----
+  // webOS draws its own screensaver over the app after a few minutes without remote input.
+  // Subscribe to the power service and decline each request (as Kodi's webOS port does).
+  // PalmServiceBridge only exists on the TV; in a desktop browser this is a no-op.
+  // The name must be unique per page load: webOS can run this script twice (back-forward
+  // navigation) and a second registration under the same name is refused.
+  const APP_ID = 'com.torres.immichscreen.' + Date.now();
+  let screensaverBridge = null;
+  function lunaCall(uri, params, onReply) {
+    if (typeof PalmServiceBridge === 'undefined') return null;
+    const bridge = new PalmServiceBridge();
+    bridge.onservicecallback = msg => {
+      let data = {};
+      try { data = JSON.parse(msg); } catch {}
+      console.log('luna', uri.split('/').pop(), msg);
+      if (onReply) onReply(data);
+    };
+    bridge.call(uri, JSON.stringify(params));
+    return bridge;
+  }
+  function refuseScreensaver() {
+    screensaverBridge = lunaCall(
+      'luna://com.webos.service.tvpower/power/registerScreenSaverRequest',
+      { subscribe: true, clientName: APP_ID },
+      msg => {
+        if (msg.state === 'Active') {
+          console.log('screensaver request at', msg.timestamp, '- refusing');
+          lunaCall('luna://com.webos.service.tvpower/power/responseScreenSaverRequest',
+            { clientName: APP_ID, ack: false, timestamp: msg.timestamp });
+        }
+      });
+  }
+  refuseScreensaver();
+
+  // ---- Boot ----
+  setMode(mode, { announce: false });
+  loadTracks();
 </script>
 </body>
 </html>

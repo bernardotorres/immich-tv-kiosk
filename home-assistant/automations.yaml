@@ -1,10 +1,39 @@
 - id: tv_kiosk_screensaver
   alias: TV Kiosk Screensaver
   description: >
-    Every minute, check if the TV has been idle (home screen or LG Gallery+) for 10 minutes.
-    If so, launch the Immich kiosk. Uses direct webOS polling, not HA state, to avoid stale reads.
+    Every 30s, check what the TV is showing. Home screen for 2 minutes, or the TV's own
+    screensaver (LG Gallery+) at all, launches the Immich kiosk. Uses direct webOS polling,
+    not HA state, to avoid stale reads.
   trigger:
     - platform: time_pattern
-      minutes: /1
+      seconds: /30
   action:
     - service: shell_command.launch_kiosk
+
+- id: tv_devmode_keepalive
+  alias: TV Developer Mode keep-alive
+  description: >
+    Daily (and on HA start), reset the LG Developer Mode session timer at developer.lge.com so
+    dev-installed apps (the kiosk) are not wiped when the session expires. Reads the token from
+    the TV when it is on, otherwise uses the cached one. Raises a persistent notification on failure.
+  trigger:
+    - platform: time
+      at: "04:30:00"
+    - platform: homeassistant
+      event: start
+  action:
+    - service: shell_command.extend_devmode
+      response_variable: result
+    - if:
+        - condition: template
+          value_template: "{{ result.returncode != 0 }}"
+      then:
+        - service: persistent_notification.create
+          data:
+            notification_id: tv_devmode_keepalive
+            title: "TV Developer Mode keep-alive failed"
+            message: "{{ result.stdout }}\n{{ result.stderr }}"
+      else:
+        - service: persistent_notification.dismiss
+          data:
+            notification_id: tv_devmode_keepalive

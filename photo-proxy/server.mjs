@@ -1,18 +1,35 @@
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const PORT       = parseInt(process.env.PORT ?? '3002', 10);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const PORT        = parseInt(process.env.PORT ?? '3002', 10);
 const IMMICH_BASE = process.env.IMMICH_BASE ?? 'http://localhost:2283/api';
 const API_KEY     = process.env.IMMICH_API_KEY ?? '';
+const ART_DIR      = process.env.ART_DIR      ?? path.join(__dirname, 'art');
+const TRACKS_DIR   = process.env.TRACKS_DIR   ?? path.join(__dirname, 'tracks');
+const PIMSLEUR_DIR = process.env.PIMSLEUR_DIR ?? '/home/bernardo/Library/books/Polski/Pimsleur/Pimsleur - Polish I';
+const CALLAS_DIR   = process.env.CALLAS_DIR   ?? '/home/bernardo/Library/musik/callas';
+const SETS_DIR     = process.env.SETS_DIR     ?? '/home/bernardo/Library/musik/sets';
 if (!API_KEY) { console.error('IMMICH_API_KEY is not set'); process.exit(1); }
 const HEADERS = { 'x-api-key': API_KEY };
 
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const AUDIO_EXTS = new Set(['.mp3', '.ogg', '.m4a', '.wav', '.flac']);
+const IMAGE_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+const AUDIO_MIME = { '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.flac': 'audio/flac' };
+
 // ---------------------------------------------------------------------------
-// Immich helpers
+// Immich helpers (photos mode)
 // ---------------------------------------------------------------------------
 
 async function fetchRandomAssets() {
-  const res = await fetch(`${IMMICH_BASE}/assets/random?count=10`, {
-    headers: HEADERS,
+  const res = await fetch(`${IMMICH_BASE}/search/random`, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'IMAGE' }),
   });
   if (!res.ok) throw new Error(`random assets ${res.status}`);
   return res.json();
@@ -34,14 +51,28 @@ async function pickRandomImageAsset() {
   return img;
 }
 
+// Immich can list an asset whose preview file is gone from disk (thumbnail 404);
+// move on to another photo instead of failing the request.
+const RANDOM_TRIES = 5;
+
 async function buildRandomPayload() {
-  const asset = await pickRandomImageAsset();
-  const dataUri = await fetchThumbnail(asset.id);
-  return { asset, dataUri };
+  let lastErr;
+  for (let i = 0; i < RANDOM_TRIES; i++) {
+    const asset = await pickRandomImageAsset();
+    try {
+      const dataUri = await fetchThumbnail(asset.id);
+      return { asset, dataUri };
+    } catch (err) {
+      if (!/ 404$/.test(err.message)) throw err;
+      console.warn(`[random] ${err.message}, trying another asset`);
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 // ---------------------------------------------------------------------------
-// Prefetch pool — always keep one ready
+// Prefetch pool — always keep one photo ready
 // ---------------------------------------------------------------------------
 
 let prefetchPromise = null; // resolves to { asset, dataUri }
@@ -108,6 +139,104 @@ async function getDayAssets(dateStr) {
 }
 
 // ---------------------------------------------------------------------------
+// Local files: artwork (art mode) and audio tracks (both modes)
+// ---------------------------------------------------------------------------
+
+function listFiles(dir, exts) {
+  try {
+    return fs.readdirSync(dir).filter(f => {
+      if (f.startsWith('.') || !exts.has(path.extname(f).toLowerCase())) return false;
+      try {
+        const st = fs.statSync(path.join(dir, f));
+        return st.isFile() && st.size > 0;
+      } catch { return false; }
+    });
+  } catch { return []; }
+}
+
+const PLAYLIST_DEFS = [
+  { id: 'ambient',  label: 'Ambient & Classical', dir: TRACKS_DIR,   shuffle: true  },
+  { id: 'pimsleur', label: 'Pimsleur Polish I',   dir: PIMSLEUR_DIR, shuffle: false },
+  { id: 'callas',   label: 'Maria Callas',        dir: CALLAS_DIR,   shuffle: true  },
+  { id: 'sets',     label: 'DJ Sets',             dir: SETS_DIR,     shuffle: true  },
+];
+
+function getPlaylists() {
+  const out = [];
+  for (const def of PLAYLIST_DEFS) {
+    const tracks = listFiles(def.dir, AUDIO_EXTS).sort();
+    if (tracks.length > 0) {
+      out.push({ id: def.id, label: def.label, shuffle: def.shuffle, dir: def.dir, tracks });
+    }
+  }
+  return out;
+}
+
+// "Caspar David Friedrich - Der Mönch am Meer.jpg" → { artist, title }
+// "De sterrennacht.jpg"                            → { artist: '', title }
+function parseArtName(filename) {
+  const base = path.basename(filename, path.extname(filename));
+  const sep  = base.indexOf(' - ');
+  return sep !== -1
+    ? { artist: base.slice(0, sep).trim(), title: base.slice(sep + 3).trim() }
+    : { artist: '',                         title: base.trim() };
+}
+
+let lastArtFile = null;
+
+function buildArtPayload() {
+  const files = listFiles(ART_DIR, IMAGE_EXTS);
+  if (!files.length) throw new Error(`No images in ART_DIR (${ART_DIR})`);
+  let candidates = files;
+  if (files.length > 1 && lastArtFile) candidates = files.filter(f => f !== lastArtFile);
+  const filename = candidates[Math.floor(Math.random() * candidates.length)];
+  lastArtFile = filename;
+  const ext     = path.extname(filename).toLowerCase();
+  const mime    = IMAGE_MIME[ext] ?? 'image/jpeg';
+  const buf     = fs.readFileSync(path.join(ART_DIR, filename));
+  const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
+  return { filename, ...parseArtName(filename), dataUri };
+}
+
+function streamTrack(req, res, dir, filename) {
+  if (!filename || filename.includes('/') || filename.includes('\\') || filename === '..') {
+    res.writeHead(403); res.end('Forbidden'); return;
+  }
+  const root = path.resolve(dir);
+  const safePath = path.resolve(root, path.basename(filename));
+  if (!safePath.startsWith(root + path.sep)) {
+    res.writeHead(403); res.end('Forbidden'); return;
+  }
+  const ext  = path.extname(filename).toLowerCase();
+  const mime = AUDIO_MIME[ext] ?? 'audio/mpeg';
+  let stat;
+  try { stat = fs.statSync(safePath); }
+  catch { sendError(res, 404, 'Not found'); return; }
+
+  const range = req.headers.range?.match(/bytes=(\d+)-(\d*)/);
+  if (range) {
+    const start = parseInt(range[1], 10);
+    const end   = range[2] ? parseInt(range[2], 10) : stat.size - 1;
+    res.writeHead(206, {
+      'Content-Type':   mime,
+      'Content-Range':  `bytes ${start}-${end}/${stat.size}`,
+      'Accept-Ranges':  'bytes',
+      'Content-Length': end - start + 1,
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(safePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Type':   mime,
+      'Content-Length': stat.size,
+      'Accept-Ranges':  'bytes',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(safePath).pipe(res);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
 
@@ -138,7 +267,21 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   // ------------------------------------------------------------------
-  // GET /random
+  // GET /  — the kiosk page itself, for testing in a desktop browser
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'kiosk.html'));
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+      res.end(html);
+    } catch {
+      sendError(res, 404, 'kiosk.html not deployed next to server.mjs');
+    }
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /random  — random Immich photo
   // ------------------------------------------------------------------
   if (req.method === 'GET' && url.pathname === '/random') {
     try {
@@ -229,11 +372,73 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ------------------------------------------------------------------
+  // GET /art/random  — random artwork from ART_DIR: { filename, artist, title, dataUri }
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/art/random') {
+    try {
+      sendJson(res, 200, buildArtPayload());
+    } catch (err) {
+      console.error('[/art/random]', err.message);
+      sendError(res, 500, err.message);
+    }
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /playlists  — available audio playlists [{ id, label, shuffle, tracks }]
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/playlists') {
+    const playlists = getPlaylists().map(({ id, label, shuffle, tracks }) => ({ id, label, shuffle, tracks }));
+    sendJson(res, 200, playlists);
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /tracks  — sorted audio filenames in TRACKS_DIR
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/tracks') {
+    sendJson(res, 200, listFiles(TRACKS_DIR, AUDIO_EXTS).sort());
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /track/:playlist/:filename  — stream audio from a named playlist
+  // ------------------------------------------------------------------
+  const playlistTrack = url.pathname.match(/^\/track\/([^/]+)\/([^/]+)$/);
+  if (req.method === 'GET' && playlistTrack) {
+    let playlistId, filename;
+    try {
+      playlistId = decodeURIComponent(playlistTrack[1]);
+      filename   = decodeURIComponent(playlistTrack[2]);
+    } catch { sendError(res, 400, 'Bad track path'); return; }
+    const pl = PLAYLIST_DEFS.find(p => p.id === playlistId);
+    if (!pl) { sendError(res, 404, 'Unknown playlist'); return; }
+    streamTrack(req, res, pl.dir, filename);
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /track/:filename  — stream audio from TRACKS_DIR, range requests supported
+  // ------------------------------------------------------------------
+  const track = url.pathname.match(/^\/track\/([^/]+)$/);
+  if (req.method === 'GET' && track) {
+    let filename;
+    try { filename = decodeURIComponent(track[1]); }
+    catch { sendError(res, 400, 'Bad track name'); return; }
+    streamTrack(req, res, TRACKS_DIR, filename);
+    return;
+  }
+
   sendError(res, 404, 'Not found');
 });
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[photo-proxy] listening on http://0.0.0.0:${PORT}`);
+  console.log(`[photo-proxy] ART_DIR=${ART_DIR} (${listFiles(ART_DIR, IMAGE_EXTS).length} images)`);
+  for (const pl of getPlaylists()) {
+    console.log(`[photo-proxy] playlist "${pl.id}" (${pl.label}): ${pl.tracks.length} tracks in ${pl.dir}`);
+  }
   console.log('[photo-proxy] pre-fetching first random image...');
   startPrefetch();
 });

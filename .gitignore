@@ -4,3 +4,7 @@ node_modules/
 .claude/
 sampleApp/
 hosted/index.html
+photo-proxy/tracks/*
+!photo-proxy/tracks/.gitkeep
+photo-proxy/art/*
+!photo-proxy/art/.gitkeep

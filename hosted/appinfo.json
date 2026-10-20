@@ -1,10 +1,14 @@
 {
   "id": "com.torres.immichscreen",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "vendor": "Bernardo Torres",
   "type": "web",
   "main": "index.html",
-  "title": "Immich Display",
+  "title": "Kiosk",
   "icon": "icon.png",
-  "largeIcon": "largeIcon.png"
+  "largeIcon": "largeIcon.png",
+  "screenSaverProperties": {
+    "preferredType": 3
+  },
+  "useGalleryMode": true
 }

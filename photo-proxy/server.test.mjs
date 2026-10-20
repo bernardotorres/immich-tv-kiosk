@@ -80,7 +80,90 @@ await test('returns CORS header', async () => {
   assert.equal(res.headers.get('access-control-allow-origin'), '*');
 });
 
+console.log('\n/art/random');
+
+await test('returns 200 with artist, title and dataUri', async () => {
+  const res = await fetch(`${BASE}/art/random`);
+  assert.equal(res.status, 200);
+  const art = await res.json();
+  assert.ok(typeof art.title === 'string' && art.title.length > 0, 'title missing');
+  assert.ok(typeof art.artist === 'string', 'artist missing');
+  assert.ok(art.dataUri?.startsWith('data:image/'), 'missing dataUri');
+});
+
+await test('two calls return different artworks (if >1 in ART_DIR)', async () => {
+  const a = await (await fetch(`${BASE}/art/random`)).json();
+  const b = await (await fetch(`${BASE}/art/random`)).json();
+  if (a.filename === b.filename) {
+    const c = await (await fetch(`${BASE}/art/random`)).json();
+    assert.equal(c.filename, a.filename, 'ART_DIR has >1 image but /art/random repeated itself');
+  }
+});
+
+console.log('\n/tracks');
+
+const tracks = await (await fetch(`${BASE}/tracks`)).json();
+
+await test('returns a sorted array of audio filenames', async () => {
+  assert.ok(Array.isArray(tracks), 'not an array');
+  assert.deepEqual(tracks, [...tracks].sort(), 'not sorted');
+  for (const t of tracks) assert.match(t, /\.(mp3|ogg|m4a|wav|flac)$/i);
+});
+
+await test('/track/:name streams audio with range support', async () => {
+  if (!tracks.length) return;
+  const url = `${BASE}/track/${encodeURIComponent(tracks[0])}`;
+  const head = await fetch(url, { headers: { Range: 'bytes=0-99' } });
+  assert.equal(head.status, 206);
+  assert.match(head.headers.get('content-type'), /^audio\//);
+  assert.equal(head.headers.get('content-length'), '100');
+  assert.match(head.headers.get('content-range'), /^bytes 0-99\/\d+$/);
+  assert.equal((await head.arrayBuffer()).byteLength, 100);
+});
+
+await test('/track/ rejects path traversal', async () => {
+  const res = await fetch(`${BASE}/track/..%2F..%2Fserver.mjs`);
+  assert.ok(res.status === 403 || res.status === 404, `status ${res.status}`);
+  assert.doesNotMatch(res.headers.get('content-type') ?? '', /javascript/);
+});
+
+await test('/track/ unknown file returns 404', async () => {
+  const res = await fetch(`${BASE}/track/does-not-exist.mp3`);
+  assert.equal(res.status, 404);
+});
+
+console.log('\n/playlists');
+
+const playlists = await (await fetch(`${BASE}/playlists`)).json();
+
+await test('returns a non-empty array of playlists with tracks', async () => {
+  assert.ok(Array.isArray(playlists) && playlists.length > 0, 'no playlists returned');
+  for (const pl of playlists) {
+    assert.ok(typeof pl.id === 'string' && pl.id.length > 0, 'playlist id missing');
+    assert.ok(typeof pl.label === 'string' && pl.label.length > 0, 'playlist label missing');
+    assert.ok(typeof pl.shuffle === 'boolean', 'playlist shuffle missing');
+    assert.ok(Array.isArray(pl.tracks) && pl.tracks.length > 0, `playlist ${pl.id} has no tracks`);
+  }
+});
+
+await test('/track/:playlist/:name streams audio from each playlist', async () => {
+  for (const pl of playlists) {
+    const url = `${BASE}/track/${encodeURIComponent(pl.id)}/${encodeURIComponent(pl.tracks[0])}`;
+    const head = await fetch(url, { headers: { Range: 'bytes=0-99' } });
+    assert.equal(head.status, 206, `failed on playlist ${pl.id}`);
+    assert.match(head.headers.get('content-type'), /^audio\//);
+    assert.equal((await head.arrayBuffer()).byteLength, 100);
+  }
+});
+
 console.log('\n/other');
+
+await test('/ serves the kiosk page', async () => {
+  const res = await fetch(`${BASE}/`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  assert.match(await res.text(), /<title>Kiosk<\/title>/);
+});
 
 await test('unknown path returns 404', async () => {
   const res = await fetch(`${BASE}/nonexistent`);
