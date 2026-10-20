@@ -28,7 +28,7 @@ old app can be removed from the TV with `ares-install --device Odeon --remove co
 | Deployed proxy | `peri:~/codes/photoskiosk/photo-proxy/` (same path as on the Mac), user unit `photo-proxy.service`, `0.0.0.0:3002` |
 | Redeploy | `~/codes/photoskiosk/deploy/deploy.sh` |
 | Env | `peri:~/codes/photoskiosk/photo-proxy/.env` (`IMMICH_API_KEY`, `IMMICH_BASE`, `PORT`; optional `ART_DIR`, `TRACKS_DIR`, `PIMSLEUR_DIR`, `CALLAS_DIR`, `SETS_DIR`) |
-| Art / audio | `peri:~/codes/photoskiosk/photo-proxy/art/` (7 paintings, German/Dutch titles), `.../tracks/` (19 ambient & classical mp3s), plus `Pimsleur Polish I` (30 units), `Maria Callas` (8 recordings), `DJ Sets` (12 sets) |
+| Art / audio | `peri:~/codes/photoskiosk/photo-proxy/art/` (16 artworks: Caspar David Friedrich, Van Gogh, Francis Danby, Christoph Niemann), `.../tracks/` (19 ambient & classical mp3s), plus `Pimsleur Polish I` (30 units), `Maria Callas` (8 recordings), `DJ Sets` (12 sets) |
 | TV | `192.168.178.41`, HA entry `webostv` "Odeon", dev-mode ssh on 9922 (`ares-* --device Odeon`) |
 | Launch | HA automation `tv_kiosk_screensaver` (every 30s) → `shell_command.launch_kiosk` → `/config/launch_kiosk.py` |
 
