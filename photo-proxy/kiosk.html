@@ -113,19 +113,35 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    max-width: 40%;
+    max-width: 45%;
   }
   #music-info.visible { opacity: 1; }
   #music-note { font-size: 20px; opacity: 0.8; flex-shrink: 0; }
+  #music-text-container {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
   #music-track-name {
     font-size: 18px;
     font-weight: 200;
     letter-spacing: 0.5px;
-    color: rgba(255,255,255,0.8);
+    color: rgba(255,255,255,0.85);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  #music-now-playing {
+    font-size: 14px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.7);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+  #music-now-playing:empty { display: none; }
 
   /* Status / error overlay — centered */
   #status {
@@ -230,7 +246,10 @@
 </div>
 <div class="overlay" id="music-info">
   <span id="music-note">♪</span>
-  <span id="music-track-name"></span>
+  <div id="music-text-container">
+    <span id="music-track-name"></span>
+    <span id="music-now-playing"></span>
+  </div>
 </div>
 <div class="overlay" id="status">Loading…</div>
 <div id="progress-bar"></div>
@@ -282,6 +301,7 @@
   const artArtistEl = document.getElementById('art-artist');
   const musicInfoEl = document.getElementById('music-info');
   const musicNameEl = document.getElementById('music-track-name');
+  const musicNowPlayingEl = document.getElementById('music-now-playing');
   const progressBar = document.getElementById('progress-bar');
   const statusEl    = document.getElementById('status');
 
@@ -567,17 +587,46 @@
     if (pl.order.length > 1) stepTrack(1);
   });
 
+  const nowPlayingMap = new Map(); // streamName -> current nowPlaying metadata
+
   function formatTrackDisplay(pl) {
     if (!pl || !pl.order.length) return '';
     const clean = pl.order[pl.idx].replace(/\.[^.]+$/, '').replace(/_/g, ' ');
     return playlists.length > 1 ? `${pl.label} · ${clean}` : clean;
   }
 
-  function showMusicInfo(text) {
+  function showMusicInfo(text, subtext = null, duration = MUSIC_INFO_SHOW) {
     musicNameEl.textContent = text;
+    if (musicNowPlayingEl) {
+      const pl = curPlaylist();
+      const currentSub = subtext !== null
+        ? subtext
+        : (pl?.live && pl.order?.length ? (nowPlayingMap.get(pl.order[pl.idx]) || '') : '');
+      musicNowPlayingEl.textContent = currentSub;
+    }
     musicInfoEl.classList.add('visible');
     clearTimeout(musicTimer);
-    musicTimer = setTimeout(() => musicInfoEl.classList.remove('visible'), MUSIC_INFO_SHOW);
+    musicTimer = setTimeout(() => musicInfoEl.classList.remove('visible'), duration);
+  }
+
+  async function checkRadioNowPlaying(pl) {
+    if (!pl || !pl.live || !pl.order?.length || !musicOn) return;
+    const streamName = pl.order[pl.idx];
+    try {
+      const res = await fetch(`${PROXY}/radio/now-playing?stream=${encodeURIComponent(streamName)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const cur = curPlaylist();
+      if (!cur || !cur.live || cur.order[cur.idx] !== streamName || !musicOn) return;
+
+      const prev = nowPlayingMap.get(streamName);
+      if (data && data.nowPlaying) {
+        nowPlayingMap.set(streamName, data.nowPlaying);
+        if (data.nowPlaying !== prev) {
+          showMusicInfo(formatTrackDisplay(cur), data.nowPlaying, 8000);
+        }
+      }
+    } catch {}
   }
 
   function playTrack(idx, { resume = false } = {}) {
@@ -597,6 +646,9 @@
     }
     audio.play().catch(e => console.warn('audio play:', e.message));
     showMusicInfo(formatTrackDisplay(pl));
+    if (pl.live) {
+      checkRadioNowPlaying(pl);
+    }
   }
 
   function stepTrack(dir) {
@@ -641,7 +693,8 @@
         audio.removeAttribute('src');
         audio.load();
       }
-      showMusicInfo('off');
+      if (musicNowPlayingEl) musicNowPlayingEl.textContent = '';
+      showMusicInfo('off', '');
       return;
     }
     if (!pl || !pl.order.length) { showMusicInfo('no tracks'); return; }
@@ -652,6 +705,13 @@
       playTrack(pl.idx, { resume: true });
     }
   }
+
+  setInterval(() => {
+    const pl = curPlaylist();
+    if (musicOn && pl?.live) {
+      checkRadioNowPlaying(pl);
+    }
+  }, 15000);
 
   function initPlaylistOrder(raw) {
     const order = [...raw.tracks];

@@ -157,16 +157,16 @@ function listFiles(dir, exts) {
 }
 
 const POLISH_RADIO_STREAMS = [
-  { name: 'Radio Nowy Świat',      url: 'https://stream.rcs.revma.com/ypqt40u0x1zuv',                 mode: 'direct' },
-  { name: 'Radio 357',             url: 'https://stream.radio357.pl/',                                mode: 'direct' },
-  { name: 'Polskie Radio Trójka',  url: 'https://stream13.polskieradio.pl/pr3/pr3.sdp/playlist.m3u8', mode: 'ffmpeg' },
-  { name: 'Polskie Radio Dwójka',  url: 'https://stream12.polskieradio.pl/pr2/pr2.sdp/playlist.m3u8', mode: 'ffmpeg' },
-  { name: 'Polskie Radio Jedynka', url: 'https://stream11.polskieradio.pl/pr1/pr1.sdp/playlist.m3u8', mode: 'ffmpeg' },
-  { name: 'Polskie Radio 24',      url: 'http://stream3.polskieradio.pl:8080/;',                      mode: 'ffmpeg' },
-  { name: 'TOK FM',                url: 'https://radiostream.pl/tuba10-1.mp3',                        mode: 'direct' },
-  { name: 'RMF Classic',           url: 'http://195.150.20.242:8000/rmf_classic',                     mode: 'direct' },
-  { name: 'RMF FM',                url: 'http://195.150.20.242:8000/rmf_fm',                          mode: 'direct' },
-  { name: 'Radio ZET',             url: 'https://zt01.cdn.eurozet.pl/zet-net.mp3',                    mode: 'direct' },
+  { name: 'Radio Nowy Świat (Indie & Culture)',     url: 'https://stream.rcs.revma.com/ypqt40u0x1zuv',                 mode: 'direct' },
+  { name: 'Radio 357 (Indie Rock)',                 url: 'https://stream.radio357.pl/',                                mode: 'direct' },
+  { name: 'Polskie Radio Trójka (Rock & Culture)',   url: 'https://stream13.polskieradio.pl/pr3/pr3.sdp/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'Polskie Radio Dwójka (Classical & Jazz)', url: 'https://stream12.polskieradio.pl/pr2/pr2.sdp/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'Polskie Radio Jedynka (News & Pop)',     url: 'https://stream11.polskieradio.pl/pr1/pr1.sdp/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'Polskie Radio 24 (All News)',            url: 'http://stream3.polskieradio.pl:8080/;',                      mode: 'ffmpeg' },
+  { name: 'TOK FM (Opinion & Talk)',                url: 'https://radiostream.pl/tuba10-1.mp3',                        mode: 'direct' },
+  { name: 'RMF Classic (Cinema & Classical)',       url: 'http://195.150.20.242:8000/rmf_classic',                     mode: 'direct' },
+  { name: 'RMF FM (Pop & Hits)',                    url: 'http://195.150.20.242:8000/rmf_fm',                          mode: 'direct' },
+  { name: 'Radio ZET (Pop & Rock Hits)',            url: 'https://zt01.cdn.eurozet.pl/zet-net.mp3',                    mode: 'direct' },
 ];
 
 const PLAYLIST_DEFS = [
@@ -252,6 +252,140 @@ async function streamLiveRadio(req, res, streamDef) {
   const cleanup = () => { try { ff.kill('SIGTERM'); } catch {} };
   req.on('close', cleanup);
   res.on('close', cleanup);
+}
+
+// In-memory cache for live radio metadata: station name -> { title, expiresAt }
+const nowPlayingCache = new Map();
+
+async function readIcyStreamTitle(streamUrl, timeoutMs = 3000) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(streamUrl, {
+      headers: { 'Icy-MetaData': '1', 'User-Agent': 'Mozilla/5.0 (KioskRadioProxy)' },
+      signal: ac.signal,
+    });
+    const metaint = parseInt(res.headers.get('icy-metaint'), 10);
+    if (!metaint) return null;
+    const reader = res.body.getReader();
+    let buf = Buffer.alloc(0);
+    while (buf.length < metaint + 1024) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf = Buffer.concat([buf, Buffer.from(value)]);
+    }
+    reader.cancel();
+    if (buf.length > metaint) {
+      const metaLen = buf[metaint] * 16;
+      if (metaLen > 0 && buf.length >= metaint + 1 + metaLen) {
+        const metaStr = buf.subarray(metaint + 1, metaint + 1 + metaLen).toString('utf-8');
+        const m = metaStr.match(/StreamTitle=\x27(.*?)\x27;/);
+        if (m && m[1] && m[1].trim()) return m[1].trim();
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchStationNowPlaying(streamDef) {
+  const name = streamDef.name;
+  const now = Date.now();
+  const cached = nowPlayingCache.get(name);
+  if (cached && cached.expiresAt > now) {
+    return cached.title;
+  }
+
+  let title = null;
+
+  try {
+    // 1. Stations with rich ICY stream titles (RMF Classic, RMF FM, Radio 357, Radio Nowy Świat)
+    if (name.includes('RMF') || name.includes('357') || name.includes('Nowy Świat')) {
+      title = await readIcyStreamTitle(streamDef.url);
+    }
+
+    // 2. Radio ZET — Eurozet RDS history API
+    if (!title && name.includes('ZET')) {
+      try {
+        const t = Math.floor(now / 1000);
+        const res = await fetch(`https://rds.eurozet.pl/reader/history.php?callback=jsonData&startDate=${t - 1800}&emitter=radiozet&trackCount=5`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        const txt = await res.text();
+        const json = JSON.parse(txt.replace(/^jsonData\(/, '').replace(/\)$/, ''));
+        const list = json?.messages?.[0];
+        if (list && list.length > 0) {
+          const last = list[list.length - 1];
+          if (last.rds_artist && last.rds_title) {
+            title = `${last.rds_artist} - ${last.rds_title}`;
+          }
+        }
+      } catch {}
+    }
+
+    // 3. TOK FM — Agora Podcast/OnAir API
+    if (!title && name.includes('TOK FM')) {
+      try {
+        const res = await fetch('https://api.podcast.radioagora.pl/api/nowPlayingForMobile', {
+          signal: AbortSignal.timeout(3000),
+        });
+        const json = await res.json();
+        const cur = json?.current?.[0];
+        if (cur) {
+          if (cur.name && cur.title) title = `${cur.name} · ${cur.title}`;
+          else title = cur.name || cur.title || null;
+        }
+      } catch {}
+    }
+
+    // 4. Polskie Radio (Trójka, Jedynka) — Ramówka schedule
+    if (!title && (name.includes('Trójka') || name.includes('Jedynka'))) {
+      const channel = name.includes('Trójka') ? 'trojka' : 'jedynka';
+      try {
+        const res = await fetch(`https://${channel}.polskieradio.pl/ramowka`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        const text = await res.text();
+        const nowWarsaw = new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 19);
+        const re = /\\"fullStartTime\\":\\"([^"\\]+)\\",\\"fullStopTime\\":\\"([^"\\]+)\\"(?:(?!(?:fullStartTime|title)).)*?\\"title\\":\\"([^"\\]+)\\"/g;
+        let match;
+        while ((match = re.exec(text)) !== null) {
+          const [_, start, stop, t] = match;
+          if (start <= nowWarsaw && nowWarsaw < stop) {
+            title = t.replace(/\\"/g, '"').trim();
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    // 5. Polskie Radio Dwójka — live audition
+    if (!title && name.includes('Dwójka')) {
+      try {
+        const res = await fetch('https://dwojka.polskieradio.pl', {
+          signal: AbortSignal.timeout(3000),
+        });
+        const text = await res.text();
+        const idx = text.indexOf('live-audition');
+        if (idx !== -1) {
+          const snippet = text.substring(idx, idx + 800);
+          const m = snippet.match(/<div class="title">\s*([\s\S]*?)\s*<\/div>/);
+          if (m && m[1]) title = m[1].replace(/\s+/g, ' ').trim();
+        }
+      } catch {}
+    }
+
+    // Generic ICY fallback for other streams
+    if (!title && streamDef.url && !streamDef.url.endsWith('.m3u8')) {
+      title = await readIcyStreamTitle(streamDef.url);
+    }
+  } catch {}
+
+  nowPlayingCache.set(name, { title, expiresAt: now + 15000 });
+  return title;
 }
 
 // "Caspar David Friedrich - Der Mönch am Meer.jpg" → { artist, title }
@@ -485,6 +619,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ------------------------------------------------------------------
+  // GET /radio/now-playing?stream=:name  — current song/program for a radio station
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/radio/now-playing') {
+    const rawStream = url.searchParams.get('stream') || '';
+    let streamName;
+    try { streamName = decodeURIComponent(rawStream); } catch { streamName = rawStream; }
+    const pl = PLAYLIST_DEFS.find(p => p.streams);
+    const streamDef = pl?.streams?.find(s => s.name === streamName || s.name.startsWith(streamName + ' (') || streamName.startsWith(s.name));
+    if (!streamDef) {
+      sendJson(res, 200, { station: streamName, nowPlaying: null });
+      return;
+    }
+    const title = await fetchStationNowPlaying(streamDef);
+    sendJson(res, 200, { station: streamDef.name, nowPlaying: title || null });
+    return;
+  }
+
+  // ------------------------------------------------------------------
   // GET /track/:playlist/:filename  — stream audio or live radio from a station
   // ------------------------------------------------------------------
   const playlistTrack = url.pathname.match(/^\/track\/([^/]+)\/([^/]+)$/);
@@ -497,7 +649,7 @@ const server = http.createServer(async (req, res) => {
     const pl = PLAYLIST_DEFS.find(p => p.id === playlistId);
     if (!pl) { sendError(res, 404, 'Unknown playlist'); return; }
     if (pl.streams) {
-      const streamDef = pl.streams.find(s => s.name === filename);
+      const streamDef = pl.streams.find(s => s.name === filename || s.name.startsWith(filename + ' (') || filename.startsWith(s.name));
       if (!streamDef) { sendError(res, 404, 'Unknown radio stream'); return; }
       await streamLiveRadio(req, res, streamDef);
       return;

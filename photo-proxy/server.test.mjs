@@ -167,6 +167,25 @@ await test('/track/:playlist/:name streams audio from each playlist (files + liv
   }
 });
 
+console.log('\n/radio/now-playing');
+
+await test('/radio/now-playing returns 200 with station and nowPlaying info', async () => {
+  const res = await fetch(`${BASE}/radio/now-playing?stream=${encodeURIComponent('Radio 357 (Indie Rock)')}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /application\/json/);
+  const data = await res.json();
+  assert.equal(data.station, 'Radio 357 (Indie Rock)');
+  assert.ok('nowPlaying' in data);
+});
+
+await test('/radio/now-playing with unknown stream returns null nowPlaying', async () => {
+  const res = await fetch(`${BASE}/radio/now-playing?stream=unknown`);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.station, 'unknown');
+  assert.equal(data.nowPlaying, null);
+});
+
 console.log('\n/other');
 
 await test('/ serves the kiosk page', async () => {
