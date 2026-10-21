@@ -597,8 +597,8 @@
 
   function showMusicInfo(text, subtext = null, duration = MUSIC_INFO_SHOW) {
     musicNameEl.textContent = text;
+    const pl = curPlaylist();
     if (musicNowPlayingEl) {
-      const pl = curPlaylist();
       const currentSub = subtext !== null
         ? subtext
         : (pl?.live && pl.order?.length ? (nowPlayingMap.get(pl.order[pl.idx]) || '') : '');
@@ -606,7 +606,9 @@
     }
     musicInfoEl.classList.add('visible');
     clearTimeout(musicTimer);
-    musicTimer = setTimeout(() => musicInfoEl.classList.remove('visible'), duration);
+    if (!pl?.live || !musicOn) {
+      musicTimer = setTimeout(() => musicInfoEl.classList.remove('visible'), duration);
+    }
   }
 
   async function checkRadioNowPlaying(pl) {
