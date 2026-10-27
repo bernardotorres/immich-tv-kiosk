@@ -80,6 +80,39 @@ await test('returns CORS header', async () => {
   assert.equal(res.headers.get('access-control-allow-origin'), '*');
 });
 
+console.log('\n/day-nav');
+
+await test('dir=1 returns the first photo of an earlier day (or 404 at the start of the library)', async () => {
+  const res = await fetch(`${BASE}/day-nav?date=${seedDate}&dir=1`);
+  if (res.status === 404) return;
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(data.asset?.id, 'missing asset.id');
+  assert.ok(data.dataUri?.startsWith('data:image/'), 'missing dataUri');
+  assert.equal(data.index, 1);
+  assert.ok(data.total >= 1, 'total < 1');
+  assert.ok(data.date < seedDate, `day ${data.date} is not before ${seedDate}`);
+  assert.equal((data.asset.localDateTime ?? data.asset.fileCreatedAt).split('T')[0], data.date);
+});
+
+await test('dir=-1 returns a later day (or 404 at the end of the library)', async () => {
+  const res = await fetch(`${BASE}/day-nav?date=${seedDate}&dir=-1`);
+  if (res.status === 404) return;
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(data.date > seedDate, `day ${data.date} is not after ${seedDate}`);
+});
+
+await test('returns 404 before the first day ever', async () => {
+  const res = await fetch(`${BASE}/day-nav?date=1900-01-01&dir=1`);
+  assert.equal(res.status, 404);
+});
+
+await test('returns 400 on a bad date or dir', async () => {
+  assert.equal((await fetch(`${BASE}/day-nav?date=yesterday&dir=1`)).status, 400);
+  assert.equal((await fetch(`${BASE}/day-nav?date=${seedDate}&dir=2`)).status, 400);
+});
+
 console.log('\n/art/random');
 
 await test('returns 200 with artist, title and dataUri', async () => {
@@ -98,6 +131,58 @@ await test('two calls return different artworks (if >1 in ART_DIR)', async () =>
     const c = await (await fetch(`${BASE}/art/random`)).json();
     assert.equal(c.filename, a.filename, 'ART_DIR has >1 image but /art/random repeated itself');
   }
+});
+
+await test('unknown gallery returns 404', async () => {
+  assert.equal((await fetch(`${BASE}/art/random?gallery=nope`)).status, 404);
+});
+
+console.log('\n/art/galleries, /art/list, /art/image');
+
+const galleries = await (await fetch(`${BASE}/art/galleries`)).json();
+
+await test('/art/galleries lists "all" first with counts', async () => {
+  assert.ok(Array.isArray(galleries) && galleries.length > 0, 'no galleries');
+  assert.equal(galleries[0].id, 'all');
+  assert.equal(galleries[0].label, 'All');
+  for (const g of galleries) {
+    assert.ok(typeof g.label === 'string' && g.label.length > 0, `gallery ${g.id} has no label`);
+    assert.ok(Number.isInteger(g.count) && g.count > 0, `gallery ${g.id} has no images`);
+  }
+  const subs = galleries.slice(1).reduce((n, g) => n + g.count, 0);
+  assert.ok(galleries[0].count >= subs, '"all" is smaller than the sum of the moods');
+});
+
+await test('/art/list returns sorted entries with artist and title; sub-gallery files are prefixed', async () => {
+  for (const g of galleries) {
+    const list = await (await fetch(`${BASE}/art/list?gallery=${encodeURIComponent(g.id)}`)).json();
+    assert.equal(list.length, g.count, `gallery ${g.id}: list/count mismatch`);
+    for (const e of list) {
+      assert.ok(typeof e.file === 'string' && e.file.length > 0, 'file missing');
+      assert.ok(typeof e.title === 'string' && e.title.length > 0, 'title missing');
+      assert.ok(typeof e.artist === 'string', 'artist missing');
+      if (g.id !== 'all') assert.ok(e.file.startsWith(`${g.id}/`), `${e.file} not under ${g.id}/`);
+    }
+  }
+  assert.equal((await fetch(`${BASE}/art/list?gallery=nope`)).status, 404);
+});
+
+await test('/art/image serves a listed file with the /art/random shape', async () => {
+  const list = await (await fetch(`${BASE}/art/list?gallery=all`)).json();
+  const res = await fetch(`${BASE}/art/image?file=${encodeURIComponent(list[0].file)}`);
+  assert.equal(res.status, 200);
+  const art = await res.json();
+  assert.equal(art.filename, list[0].file);
+  assert.equal(art.title, list[0].title);
+  assert.ok(art.dataUri?.startsWith('data:image/'), 'missing dataUri');
+});
+
+await test('/art/image rejects traversal and unknown files', async () => {
+  assert.equal((await fetch(`${BASE}/art/image?file=..%2Fserver.mjs`)).status, 403);
+  assert.equal((await fetch(`${BASE}/art/image?file=calm%2F..%2F..%2Fserver.mjs`)).status, 403);
+  assert.equal((await fetch(`${BASE}/art/image?file=a%2Fb%2Fc.jpg`)).status, 403);
+  assert.equal((await fetch(`${BASE}/art/image?file=does-not-exist.jpg`)).status, 404);
+  assert.equal((await fetch(`${BASE}/art/image`)).status, 403);
 });
 
 console.log('\n/tracks');

@@ -140,6 +140,48 @@ async function getDayAssets(dateStr) {
   return assets;
 }
 
+function assetDay(asset) {
+  const raw = asset?.localDateTime ?? asset?.fileCreatedAt ?? null;
+  return raw ? raw.split('T')[0] : null;
+}
+
+// Nearest day with photos before (dir=1) or after (dir=-1) dateStr, or null at the ends of the
+// library. Immich filters takenBefore/After on fileCreatedAt (UTC) while the day label comes from
+// localDateTime, so an asset can land on the same calendar day again; step past it and retry.
+async function findAdjacentDay(dateStr, dir) {
+  let bound = dir > 0 ? `${dateStr}T00:00:00.000Z` : `${dateStr}T23:59:59.999Z`;
+  for (let i = 0; i < 4; i++) {
+    const filter = dir > 0 ? { takenBefore: bound, order: 'desc' } : { takenAfter: bound, order: 'asc' };
+    const res = await fetch(`${IMMICH_BASE}/search/metadata`, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...filter, type: 'IMAGE', size: 1 }),
+    });
+    if (!res.ok) throw new Error(`day-nav search ${res.status}`);
+    const asset = ((await res.json())?.assets?.items ?? [])[0];
+    if (!asset) return null;
+    const day = assetDay(asset);
+    if (day && day !== dateStr) return day;
+    const t = Date.parse(asset.fileCreatedAt ?? asset.localDateTime);
+    if (Number.isNaN(t)) return null;
+    bound = new Date(t - dir * 1000).toISOString();
+  }
+  return null;
+}
+
+// First photo of a day that still has its preview (see RANDOM_TRIES).
+async function firstOfDay(day) {
+  const assets = await getDayAssets(day);
+  for (const asset of assets.slice(0, RANDOM_TRIES)) {
+    try {
+      return { asset, dataUri: await fetchThumbnail(asset.id), index: assets.indexOf(asset) + 1, total: assets.length, date: day };
+    } catch (err) {
+      if (!/ 404$/.test(err.message)) throw err;
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Local files: artwork (art mode) and audio tracks (both modes)
 // ---------------------------------------------------------------------------
@@ -398,20 +440,60 @@ function parseArtName(filename) {
     : { artist: '',                         title: base.trim() };
 }
 
+// Galleries: each subfolder of ART_DIR is one (a mood); 'all' comes first and also holds the
+// files at the root. Files are addressed relative to ART_DIR ("calm/Van Gogh - Irissen.jpg").
+function titleCase(s) {
+  return s.replace(/[-_]+/g, ' ').replace(/\b\p{L}/gu, c => c.toUpperCase());
+}
+
+function listArtGalleries() {
+  const root = listFiles(ART_DIR, IMAGE_EXTS).sort();
+  let subs = [];
+  try {
+    subs = fs.readdirSync(ART_DIR, { withFileTypes: true })
+      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+      .map(d => ({ id: d.name, label: titleCase(d.name), files: listFiles(path.join(ART_DIR, d.name), IMAGE_EXTS).sort().map(f => `${d.name}/${f}`) }))
+      .filter(g => g.files.length)
+      .sort((a, b) => a.id.localeCompare(b.id));
+  } catch {}
+  const all = { id: 'all', label: 'All', files: [...root, ...subs.flatMap(g => g.files)] };
+  return [all, ...subs];
+}
+
+// Rejects anything but "<file>" or "<gallery>/<file>" inside ART_DIR.
+function safeArtPath(relFile) {
+  if (!relFile || relFile.includes('\\') || relFile.split('/').some(p => !p || p === '.' || p === '..')) return null;
+  if (relFile.split('/').length > 2) return null;
+  const root = path.resolve(ART_DIR);
+  const safe = path.resolve(root, relFile);
+  return safe.startsWith(root + path.sep) ? safe : null;
+}
+
+function buildArtPayload(relFile) {
+  const safe = safeArtPath(relFile);
+  if (!safe) { const err = new Error('Forbidden'); err.status = 403; throw err; }
+  const ext  = path.extname(relFile).toLowerCase();
+  if (!IMAGE_EXTS.has(ext)) { const err = new Error('Not found'); err.status = 404; throw err; }
+  let buf;
+  try { buf = fs.readFileSync(safe); }
+  catch { const err = new Error('Not found'); err.status = 404; throw err; }
+  const mime    = IMAGE_MIME[ext] ?? 'image/jpeg';
+  const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
+  return { filename: relFile, ...parseArtName(relFile), dataUri };
+}
+
 let lastArtFile = null;
 
-function buildArtPayload() {
-  const files = listFiles(ART_DIR, IMAGE_EXTS);
+function randomArtPayload(galleryId = 'all') {
+  const gallery = listArtGalleries().find(g => g.id === galleryId);
+  if (!gallery) { const err = new Error(`Unknown gallery ${galleryId}`); err.status = 404; throw err; }
+  const files = gallery.files;
   if (!files.length) throw new Error(`No images in ART_DIR (${ART_DIR})`);
   let candidates = files;
   if (files.length > 1 && lastArtFile) candidates = files.filter(f => f !== lastArtFile);
   const filename = candidates[Math.floor(Math.random() * candidates.length)];
   lastArtFile = filename;
-  const ext     = path.extname(filename).toLowerCase();
-  const mime    = IMAGE_MIME[ext] ?? 'image/jpeg';
-  const buf     = fs.readFileSync(path.join(ART_DIR, filename));
-  const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
-  return { filename, ...parseArtName(filename), dataUri };
+  return buildArtPayload(filename);
 }
 
 function streamTrack(req, res, dir, filename) {
@@ -589,14 +671,72 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ------------------------------------------------------------------
-  // GET /art/random  — random artwork from ART_DIR: { filename, artist, title, dataUri }
+  // GET /day-nav?date=YYYY-MM-DD&dir=1  — first photo of the nearest day with photos
+  // before (dir=1) or after (dir=-1) that date; same shape as /same-day, plus date
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/day-nav') {
+    const dateStr = url.searchParams.get('date');
+    const dir = parseInt(url.searchParams.get('dir') ?? '1', 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr ?? '') || (dir !== 1 && dir !== -1)) {
+      sendError(res, 400, 'Missing or invalid query params: date (YYYY-MM-DD), dir (1 | -1)');
+      return;
+    }
+    try {
+      const day = await findAdjacentDay(dateStr, dir);
+      const payload = day ? await firstOfDay(day) : null;
+      if (!payload) {
+        sendError(res, 404, `No photos ${dir > 0 ? 'before' : 'after'} ${dateStr}`);
+        return;
+      }
+      sendJson(res, 200, payload);
+    } catch (err) {
+      console.error('[/day-nav]', err.message);
+      sendError(res, 500, err.message);
+    }
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /art/random[?gallery=all]  — random artwork: { filename, artist, title, dataUri }
   // ------------------------------------------------------------------
   if (req.method === 'GET' && url.pathname === '/art/random') {
     try {
-      sendJson(res, 200, buildArtPayload());
+      sendJson(res, 200, randomArtPayload(url.searchParams.get('gallery') ?? 'all'));
     } catch (err) {
       console.error('[/art/random]', err.message);
-      sendError(res, 500, err.message);
+      sendError(res, err.status ?? 500, err.message);
+    }
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /art/galleries  — [{ id, label, count }], 'all' first
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/art/galleries') {
+    sendJson(res, 200, listArtGalleries().map(({ id, label, files }) => ({ id, label, count: files.length })));
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /art/list?gallery=all  — [{ file, artist, title }] sorted; the kiosk shuffles
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/art/list') {
+    const galleryId = url.searchParams.get('gallery') ?? 'all';
+    const gallery = listArtGalleries().find(g => g.id === galleryId);
+    if (!gallery) { sendError(res, 404, `Unknown gallery ${galleryId}`); return; }
+    sendJson(res, 200, gallery.files.map(file => ({ file, ...parseArtName(file) })));
+    return;
+  }
+
+  // ------------------------------------------------------------------
+  // GET /art/image?file=<gallery>/<name>  — one artwork, same shape as /art/random
+  // ------------------------------------------------------------------
+  if (req.method === 'GET' && url.pathname === '/art/image') {
+    try {
+      sendJson(res, 200, buildArtPayload(url.searchParams.get('file') ?? ''));
+    } catch (err) {
+      if (!err.status) console.error('[/art/image]', err.message);
+      sendError(res, err.status ?? 500, err.message);
     }
     return;
   }
@@ -675,7 +815,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[photo-proxy] listening on http://0.0.0.0:${PORT}`);
-  console.log(`[photo-proxy] ART_DIR=${ART_DIR} (${listFiles(ART_DIR, IMAGE_EXTS).length} images)`);
+  for (const g of listArtGalleries()) {
+    console.log(`[photo-proxy] gallery "${g.id}" (${g.label}): ${g.files.length} images${g.id === 'all' ? ` in ${ART_DIR}` : ''}`);
+  }
   for (const pl of getPlaylists()) {
     console.log(`[photo-proxy] station "${pl.id}" (${pl.label}): ${pl.tracks.length} ${pl.live ? 'live streams' : `tracks in ${pl.dir}`}`);
   }

@@ -14,4 +14,4 @@ rsync -a --exclude .gitkeep "$HERE/../photo-proxy/tracks/" "$HOST:$DEST/tracks/"
 rsync -a "$HERE/photo-proxy.service" "$HOST:.config/systemd/user/"
 ssh "$HOST" 'systemctl --user daemon-reload && systemctl --user enable --now photo-proxy && systemctl --user restart photo-proxy'
 sleep 2
-ssh "$HOST" 'systemctl --user is-active photo-proxy && for p in /random /art/random /tracks /playlists; do curl -sf -o /dev/null -w "$p %{http_code}\n" http://127.0.0.1:3002$p; done'
+ssh "$HOST" 'systemctl --user is-active photo-proxy && for p in /random /art/random /art/galleries /tracks /playlists; do curl -sf -o /dev/null -w "$p %{http_code}\n" http://127.0.0.1:3002$p; done'

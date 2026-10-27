@@ -21,32 +21,38 @@ LG TV (webOS app)  ──── HTTP ────►  Proxy server (Node.js)  �
 
 ## Remote
 
-| Key | Both modes (Photos & Art) |
-|-----|---------------------------|
-| ↓ / auto | Next random photo or artwork |
-| ↑ | Previous photo or artwork (history, up to 20 per mode) |
-| → / ← | Next / previous track (or live stream / lesson unit) within the current radio station |
-| CH ▲ / CH ▼ | Next / previous radio station |
-| Blue / 4 | Next radio station (`Ambient & Classical` → `Polish Radio` → `Polish Learning` → `Maria Callas` → `DJ Sets`) |
-| Yellow / 3 / Play-Pause | Audio on / off |
-| Red / 1 | Switch to Photos |
-| Green / 2 | Switch to Art |
-| OK / Enter | Re-show the artwork title + artist label (Art mode) |
-| 0 | Open the proxy URL settings |
+The ring is about what is on screen, the channel rocker about what is playing, the colour buttons
+(just under the OK ring, within thumb reach) switch mode, audio and station, and the number pad at
+the top is for direct jumps. A *gallery* is a day in Photos and a mood in Art.
 
-The colour buttons sit just under the OK ring, within thumb reach; the number pad is at the top of the Magic Remote.
+| Key | Photos | Art |
+|-----|--------|-----|
+| ← / → | Previous / next photo of that day (wraps) | Previous / next artwork of the mood (shuffled once per session, wraps) |
+| ↑ / ↓ | Newer / older day | Previous / next mood (`All` → `Calm` → `Colour` → `Drama` → `Playful`, alphabetical after `All`) |
+| auto (60 s) | Random photo; once you walked into a day with the ring, the next photo of that day | Next artwork of the current mood |
+| OK | Station · track | Artwork label, mood, station · track |
+| Back | Previously shown picture (history, up to 20 per mode) | same |
+| Red | Switch to Photos. Again while in Photos: leave the day, new random photo | — |
+| Green | — | Switch to Art. Again while in Art: back to `All`, next artwork |
+| Yellow / Play-Pause | Audio on / off | same |
+| Blue | Next station (`Ambient & Classical` → `Polish Radio` → `Polish Learning` → `Maria Callas` → `DJ Sets`) | same |
+| CH ▲ / CH ▼ | Next / previous track (or live stream / lesson unit) within the station | same |
+| 1 – 5 | Station directly, in that order | same |
+| 0 | Open the proxy URL settings | same |
 
-Mode, audio on/off, active radio station, per-station track/position (so live Polish Radio remembers your last stream, and sequential courses like Polish Learning resume on the unit and timestamp where you left off), and the proxy URL are kept in `localStorage`, so they survive reinstalls. Each mode keeps its own history: switching back resumes where that mode was.
+The Magic Remote (MR21/MR22 layout) has no play/pause or skip keys; those branches serve voice control and other remotes. VOL, MUTE, HOME, MIC, INPUT, GUIDE, ··· and the streaming buttons never reach the app. On the C3 (webOS 11.2) CH ▲ / ▼ arrive as `PageUp` / `PageDown` (keyCode 33/34), not as LG's documented 427/428; the page accepts both. Key codes as this TV really sends them are listed in `~/codes/peri/devices/tv/AGENTS.md`.
+
+Mode, audio on/off, active radio station, per-station track/position (so live Polish Radio remembers your last stream, and sequential courses like Polish Learning resume on the unit and timestamp where you left off), the art mood and the proxy URL are kept in `localStorage`, so they survive reinstalls. Each mode keeps its own history: switching back resumes where that mode was.
 
 Photos: the day counter (`N / M that day`) sits top-left and the date bottom-centre. Art: the label fades out after 12 seconds. Both: the playlist + track name shows bottom-right for 5 seconds on each track or playlist change; the bottom progress bar shows time until the next auto-advance.
 
 ## Artwork and audio playlists
 
-Drop image files (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`) into the art folder; subfolders are not scanned. Artwork titles are kept in the artist's original language (e.g. German for Caspar David Friedrich, Dutch for Van Gogh and Vermeer):
+Drop image files (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`) into the art folder. Each subfolder is a mood (its name, title-cased, is the label: `calm/` → `Calm`); files at the root belong to `All` only. Artwork titles are kept in the artist's original language (e.g. German for Caspar David Friedrich, Dutch for Van Gogh and Vermeer):
 
 ```
-Caspar David Friedrich - Der Wanderer über dem Nebelmeer.jpg   → artist + title
-Van Gogh - De sterrennacht.jpg                                 → artist + title
+calm/Caspar David Friedrich - Der Wanderer über dem Nebelmeer.jpg   → mood + artist + title
+colour/Van Gogh - De sterrennacht.jpg                               → mood + artist + title
 ```
 
 Drop `.mp3` (or `.ogg`, `.m4a`, `.wav`, `.flac`) into the tracks folder for the default `Ambient & Classical` playlist (shuffled). Additional playlists are served automatically when their folders exist (`PIMSLEUR_DIR` played in sequential order with saved position; `CALLAS_DIR` and `SETS_DIR` shuffled). Copyright-free ambient/classical sources: [Wikimedia Commons](https://commons.wikimedia.org/), [Free Music Archive](https://freemusicarchive.org/) (CC0 / CC BY), [Incompetech](https://incompetech.com/music/royalty-free/) (Kevin MacLeod, CC BY), [ccMixter](https://ccmixter.org/).
@@ -81,13 +87,13 @@ With the proxy running, open `http://<server>:3002/` — it serves the kiosk pag
 
 Requires the [webOS SDK](https://webostv.developer.lge.com/develop/tools/cli-installation) (`ares-*` CLI tools) and [Developer Mode](https://webostv.developer.lge.com/develop/getting-started/developer-mode-app) enabled on the TV. Run the CLI under Node 22; it crashes under Node 25.
 
-The default proxy URL is in `kiosk.html` (`DEFAULT_PROXY`) and can be changed on the TV with the `0` key.
+The default proxy URL is in `kiosk.html` (`DEFAULT_PROXY`) and can be changed on the TV with the `0` key. `appinfo.json` sets `disableBackHistoryAPI` so the Back key reaches the page (history back) instead of navigating the web view.
 
 **Build and install:**
 ```bash
 cp photo-proxy/kiosk.html hosted/index.html
 ares-package hosted/
-ares-install --device <your-device> com.torres.immichscreen_1.1.0_all.ipk
+ares-install --device <your-device> com.torres.immichscreen_1.3.1_all.ipk
 ares-launch  --device <your-device> com.torres.immichscreen
 ```
 

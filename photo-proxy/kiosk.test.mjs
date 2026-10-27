@@ -111,73 +111,81 @@ await test('no broken-image placeholder visible on load', async () => {
 // ── Suite 2: navigation ───────────────────────────────────────────────────────
 console.log('\nNavigation');
 
-await test('ArrowDown loads new random photo and shows day indicator', async () => {
+const shownSrc = page => page.$$eval('#img-a,#img-b', els => [...els].find(el => el.style.opacity === '1' && el.src.startsWith('data:'))?.src);
+const waitForNewPhoto = (page, prev) => page.waitForFunction(
+  p => [...document.querySelectorAll('#img-a,#img-b')].some(el => el.src.startsWith('data:') && el.src !== p && el.style.opacity === '1'),
+  prev, { timeout: TIMEOUT }
+);
+const waitForPhoto = (page, src) => page.waitForFunction(
+  s => [...document.querySelectorAll('#img-a,#img-b')].some(el => el.src === s && el.style.opacity === '1'),
+  src, { timeout: TIMEOUT }
+);
+const keyCode = (page, code) => page.evaluate(c => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: c, bubbles: true })), code);
+const RED = 403, GREEN = 404, YELLOW = 405, BLUE = 406, CH_UP = 427, CH_DOWN = 428, BACK = 461;
+
+await test('ArrowRight steps to the next photo of the same day; Back (461) returns to the previous one', async () => {
   const page = await newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(
-    () => ['img-a','img-b'].some(id => document.getElementById(id)?.src?.startsWith('data:')),
-    { timeout: TIMEOUT }
-  );
-  const firstSrc = await page.$$eval(
-    '#img-a,#img-b',
-    els => [...els].find(el => el.src.startsWith('data:'))?.src
-  );
-  await page.keyboard.press('ArrowDown');
-  await page.waitForFunction(
-    (prev) => ['img-a','img-b'].some(id => {
-      const el = document.getElementById(id);
-      return el?.src?.startsWith('data:') && el.src !== prev && el.style.opacity === '1';
-    }),
-    firstSrc,
-    { timeout: TIMEOUT }
-  );
-  await page.waitForFunction(
-    () => document.getElementById('day-indicator')?.classList.contains('visible'),
-    { timeout: TIMEOUT }
-  );
-  const indicator = await page.textContent('#day-indicator');
-  assert.match(indicator, /\d+ \/ \d+ that day/);
+  await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
+  await page.waitForFunction(() => document.getElementById('day-indicator')?.classList.contains('visible'), { timeout: TIMEOUT });
+  const firstSrc = await shownSrc(page);
+  const date0 = await page.textContent('#date-label');
+  const total = Number((await page.textContent('#day-indicator')).match(/\/ (\d+) that day/)[1]);
+  await page.keyboard.press('ArrowRight');
+  if (total > 1) {
+    await waitForNewPhoto(page, firstSrc);
+    assert.equal(await page.textContent('#date-label'), date0, 'ArrowRight left the day');
+    assert.match(await page.textContent('#day-indicator'), /\d+ \/ \d+ that day/);
+    await keyCode(page, BACK);
+    await waitForPhoto(page, firstSrc);
+  }
+  assert.deepEqual(page._errors, [], `JS errors: ${page._errors.join(', ')}`);
   await page.close();
 });
 
-await test('ArrowUp goes back to previous photo', async () => {
+await test('ArrowDown goes to an earlier day, ArrowUp back to a later one', async () => {
   const page = await newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(
-    () => ['img-a','img-b'].some(id => document.getElementById(id)?.src?.startsWith('data:')),
-    { timeout: TIMEOUT }
-  );
-  const firstSrc = await page.$$eval('#img-a,#img-b', els => [...els].find(el => el.src.startsWith('data:'))?.src);
-  // Go forward
+  await page.waitForFunction(hasPhoto, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+  const firstSrc = await shownSrc(page);
+  const day = () => page.evaluate(() => {
+    const el = [...document.querySelectorAll('#img-a,#img-b')].find(el => el.style.opacity === '1');
+    return el ? document.getElementById('date-label').textContent : null;
+  });
+  const date0 = await day();
   await page.keyboard.press('ArrowDown');
-  await page.waitForFunction(
-    (prev) => [...document.querySelectorAll('#img-a,#img-b')].some(el => el.src.startsWith('data:') && el.src !== prev && el.style.opacity === '1'),
-    firstSrc, { timeout: TIMEOUT }
-  );
-  // Go back
+  await waitForNewPhoto(page, firstSrc);
+  const date1 = await day();
+  assert.notEqual(date1, date0, 'ArrowDown stayed on the same day');
+  assert.match(await page.textContent('#day-indicator'), /^1 \/ \d+ that day$/);
+  const secondSrc = await shownSrc(page);
   await page.keyboard.press('ArrowUp');
-  await page.waitForFunction(
-    (orig) => [...document.querySelectorAll('#img-a,#img-b')].some(el => el.src === orig && el.style.opacity === '1'),
-    firstSrc, { timeout: TIMEOUT }
-  );
+  await waitForNewPhoto(page, secondSrc);
+  assert.notEqual(await day(), date1, 'ArrowUp stayed on the same day');
+  assert.deepEqual(page._errors, [], `JS errors: ${page._errors.join(', ')}`);
   await page.close();
 });
 
-await test('ArrowRight and ArrowLeft in photos mode change track, not the photo', async () => {
+await test('Red (403) again in photos mode shuffles to a new random photo', async () => {
+  const page = await newPage();
+  await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
+  const firstSrc = await shownSrc(page);
+  await keyCode(page, RED);
+  await waitForNewPhoto(page, firstSrc);
+  assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_mode')), 'photos');
+  await page.close();
+});
+
+await test('the ring does not change the track', async () => {
   const page = await newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
   await page.waitForFunction(() => document.getElementById('music-track-name')?.textContent?.length > 0, { timeout: TIMEOUT });
-  const beforePhoto = await page.$$eval('#img-a,#img-b', els => [...els].find(el => el.style.opacity === '1')?.src);
   const track0 = await page.textContent('#music-track-name');
-  await page.keyboard.press('ArrowRight');
-  await page.waitForFunction(prev => document.getElementById('music-track-name')?.textContent !== prev, track0, { timeout: TIMEOUT });
-  const track1 = await page.textContent('#music-track-name');
-  await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(expected => document.getElementById('music-track-name')?.textContent === expected, track0, { timeout: TIMEOUT });
-  const afterPhoto = await page.$$eval('#img-a,#img-b', els => [...els].find(el => el.style.opacity === '1')?.src);
-  assert.notEqual(track1, track0, 'track did not change on ArrowRight');
-  assert.equal(afterPhoto, beforePhoto, 'photo changed on ArrowRight/ArrowLeft');
+  for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp']) await page.keyboard.press(key);
+  await page.waitForTimeout(1500);
+  assert.equal(await page.textContent('#music-track-name'), track0, 'track changed on the ring');
   await page.close();
 });
 
@@ -207,20 +215,20 @@ await test('photos mode keeps the ambient background off', async () => {
   await page.close();
 });
 
-await test('2 switches to art, 1 back to photos, and the mode persists', async () => {
+await test('Green (404) switches to art, Red (403) back to photos, and the mode persists', async () => {
   const page = await newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
-  const photoSrc = await page.$$eval('#img-a,#img-b', els => [...els].find(el => el.style.opacity === '1')?.src);
+  const photoSrc = await shownSrc(page);
 
-  await page.keyboard.press('2');
+  await keyCode(page, GREEN);
   await page.waitForFunction(
     () => document.body.dataset.mode === 'art' && document.getElementById('art-title')?.textContent?.trim().length > 0,
     { timeout: TIMEOUT }
   );
   assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_mode')), 'art');
 
-  await page.keyboard.press('1');
+  await keyCode(page, RED);
   // Switching back resumes the photo that was showing, no refetch
   await page.waitForFunction(
     (prev) => document.body.dataset.mode === 'photos' &&
@@ -231,29 +239,59 @@ await test('2 switches to art, 1 back to photos, and the mode persists', async (
   await page.close();
 });
 
-await test('ArrowRight in art mode changes track, not the artwork', async () => {
+await test('ArrowRight / ArrowLeft walk the artworks of the mood; Back returns', async () => {
+  const page = await newPage();
+  await page.goto(ART_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
+  const first = await shownSrc(page);
+  await page.keyboard.press('ArrowRight');
+  await waitForNewPhoto(page, first);
+  const second = await shownSrc(page);
+  assert.ok((await page.textContent('#art-title')).trim().length > 0, 'art-title empty after ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  await waitForPhoto(page, first);
+  await keyCode(page, BACK);
+  await waitForPhoto(page, second);
+  assert.deepEqual(page._errors, [], `JS errors: ${page._errors.join(', ')}`);
+  await page.close();
+});
+
+await test('ArrowDown / ArrowUp cycle the moods and persist the gallery; Green again returns to All', async () => {
+  const page = await newPage();
+  await page.goto(ART_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
+  const galleries = await (await fetch(`${PROXY_BASE}/art/galleries`)).json();
+  if (galleries.length < 2) { await page.close(); return; }
+  const first = await shownSrc(page);
+  await page.keyboard.press('ArrowDown');
+  await waitForNewPhoto(page, first);
+  assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_gallery')), galleries[1].id);
+  await page.waitForFunction(label => document.getElementById('status')?.textContent?.includes(label), galleries[1].label, { timeout: TIMEOUT });
+  const second = await shownSrc(page);
+  await page.keyboard.press('ArrowUp');
+  await waitForNewPhoto(page, second);
+  assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_gallery')), 'all');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => localStorage.getItem('kiosk_gallery') !== 'all', { timeout: TIMEOUT });
+  const third = await shownSrc(page);
+  await keyCode(page, GREEN);
+  await waitForNewPhoto(page, third);
+  assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_gallery')), 'all');
+  assert.deepEqual(page._errors, [], `JS errors: ${page._errors.join(', ')}`);
+  await page.close();
+});
+
+await test('OK shows the art label, the mood and the track', async () => {
   const page = await newPage();
   await page.goto(ART_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
   await page.waitForFunction(() => document.getElementById('music-track-name')?.textContent?.length > 0, { timeout: TIMEOUT });
-  const before = await page.$$eval('#img-a,#img-b', els => [...els].find(el => el.style.opacity === '1')?.src);
-  const track0 = await page.textContent('#music-track-name');
-  await page.keyboard.press('ArrowRight');
-  await page.waitForFunction((prev) => document.getElementById('music-track-name')?.textContent !== prev, track0, { timeout: TIMEOUT });
-  const after = await page.$$eval('#img-a,#img-b', els => [...els].find(el => el.style.opacity === '1')?.src);
-  assert.equal(after, before, 'artwork changed on ArrowRight');
-  await page.close();
-});
-
-await test('colour buttons: green (404) switches to art, red (403) back to photos', async () => {
-  const page = await newPage();
-  await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(hasPhoto, { timeout: TIMEOUT });
-  const colour = code => page.evaluate(c => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: c, bubbles: true })), code);
-  await colour(404);
-  await page.waitForFunction(() => document.body.dataset.mode === 'art', { timeout: TIMEOUT });
-  await colour(403);
-  await page.waitForFunction(() => document.body.dataset.mode === 'photos', { timeout: TIMEOUT });
+  await page.waitForTimeout(600);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => !document.getElementById('art-label').classList.contains('hidden') &&
+    !document.getElementById('status').classList.contains('hidden') &&
+    document.getElementById('music-info').classList.contains('visible'), { timeout: TIMEOUT });
+  assert.match(await page.textContent('#status'), /◆ /);
   await page.close();
 });
 
@@ -267,38 +305,46 @@ await test('tracks load and play in photos mode', async () => {
   await page.close();
 });
 
-await test('3 toggles music off and on, persisted', async () => {
+await test('Yellow (405) toggles music off and on, persisted', async () => {
   const page = await newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.getElementById('music-track-name')?.textContent?.length > 0, { timeout: TIMEOUT });
-  await page.keyboard.press('3');
+  await keyCode(page, YELLOW);
   await page.waitForFunction(() => document.getElementById('music-track-name')?.textContent === 'off', { timeout: TIMEOUT });
   assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_music')), 'off');
-  await page.keyboard.press('3');
+  await keyCode(page, YELLOW);
   await page.waitForFunction(() => document.getElementById('music-track-name')?.textContent !== 'off', { timeout: TIMEOUT });
   assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_music')), 'on');
   await page.close();
 });
 
-await test('CH ▲/▼ (427/428), Blue (406), and 4 switch radio stations, while ←/→ steps tracks', async () => {
+await test('Blue (406) and 1–5 switch radio stations, while CH ▲/▼ (427/428) step tracks', async () => {
   const page = await newPage();
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.getElementById('music-track-name')?.textContent?.length > 0, { timeout: TIMEOUT });
   const initialText = await page.textContent('#music-track-name');
-  // Press CH_UP (427) to switch to the next station (Polish Radio)
-  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 427, bubbles: true })));
+  // Blue switches to the next station (Polish Radio)
+  await keyCode(page, BLUE);
   await page.waitForFunction(prev => document.getElementById('music-track-name')?.textContent !== prev, initialText, { timeout: TIMEOUT });
   const savedPl = await page.evaluate(() => localStorage.getItem('kiosk_playlist'));
-  assert.equal(savedPl, 'polish-radio', `expected polish-radio after CH_UP, got ${savedPl}`);
-  // ArrowRight steps forward and ArrowLeft steps back within the station (e.g. Radio Nowy Świat -> Radio 357 -> Radio Nowy Świat)
+  assert.equal(savedPl, 'polish-radio', `expected polish-radio after Blue, got ${savedPl}`);
+  // CH ▲ steps forward and CH ▼ back within the station (e.g. Radio Nowy Świat -> Radio 357 -> Radio Nowy Świat).
+  // The C3 sends them as PageUp/PageDown (33/34); LG's documented 427/428 are accepted too.
   const streamA = await page.textContent('#music-track-name');
-  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('PageUp');
   await page.waitForFunction(prev => document.getElementById('music-track-name')?.textContent !== prev, streamA, { timeout: TIMEOUT });
-  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.evaluate(() => localStorage.getItem('kiosk_playlist')), 'polish-radio', 'CH ▲ changed the station');
+  await page.keyboard.press('PageDown');
   await page.waitForFunction(expected => document.getElementById('music-track-name')?.textContent === expected, streamA, { timeout: TIMEOUT });
-  // CH_DOWN (428) switches back to the previous station (ambient)
-  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 428, bubbles: true })));
+  await keyCode(page, CH_UP);
+  await page.waitForFunction(prev => document.getElementById('music-track-name')?.textContent !== prev, streamA, { timeout: TIMEOUT });
+  await keyCode(page, CH_DOWN);
+  await page.waitForFunction(expected => document.getElementById('music-track-name')?.textContent === expected, streamA, { timeout: TIMEOUT });
+  // 1 jumps straight to the first station (ambient), 2 to the second
+  await page.keyboard.press('1');
   await page.waitForFunction(() => localStorage.getItem('kiosk_playlist') === 'ambient', { timeout: TIMEOUT });
+  await page.keyboard.press('2');
+  await page.waitForFunction(() => localStorage.getItem('kiosk_playlist') === 'polish-radio', { timeout: TIMEOUT });
   await page.close();
 });
 

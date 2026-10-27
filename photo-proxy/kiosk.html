@@ -262,8 +262,8 @@
     <input id="config-input" type="url" spellcheck="false" autocomplete="off">
     <div id="config-hint">
       Enter → Save &amp; restart &nbsp;·&nbsp; Back/Esc → Cancel<br>
-      <span style="color:#e8657a">●</span> Photos &nbsp;·&nbsp; <span style="color:#6ccf7a">●</span> Art &nbsp;·&nbsp; <span style="color:#f2e05a">●</span> Audio on/off &nbsp;·&nbsp; <span style="color:#6a8ff0">●</span> Next station<br>
-      ↑↓ Picture &nbsp;·&nbsp; ←→ Track &nbsp;·&nbsp; CH ▲▼ / 4 Station &nbsp;·&nbsp; 1 Photos · 2 Art · 3 Audio
+      <span style="color:#e8657a">●</span> Photos &nbsp;·&nbsp; <span style="color:#6ccf7a">●</span> Art &nbsp;·&nbsp; <span style="color:#f2e05a">●</span> Audio on/off &nbsp;·&nbsp; <span style="color:#6a8ff0">●</span> Next station &nbsp;·&nbsp; same colour again: shuffle<br>
+      ←→ Picture &nbsp;·&nbsp; ↑↓ Gallery (day / mood) &nbsp;·&nbsp; OK Info &nbsp;·&nbsp; Back Previous &nbsp;·&nbsp; CH ▲▼ Track &nbsp;·&nbsp; 1–5 Station
     </div>
   </div>
 </div>
@@ -275,6 +275,7 @@
   const MUSIC_KEY           = 'kiosk_music';
   const PLAYLIST_KEY        = 'kiosk_playlist';
   const PLAYLIST_POS_PREFIX = 'kiosk_playlist_pos_';
+  const GALLERY_KEY         = 'kiosk_gallery';
   const DEFAULT_PROXY       = 'http://192.168.178.250:3002';
   const params              = new URLSearchParams(location.search);
 
@@ -309,10 +310,12 @@
   // Each mode has its own history so switching back resumes where it was.
   const MODES = {
     photos: { label: 'Photos',      noun: 'photo',   ambient: false, fetch: fetchRandomPhoto, show: showPhoto },
-    art:    { label: 'Art gallery', noun: 'artwork', ambient: true,  fetch: fetchRandomArt,   show: showArt   },
+    art:    { label: 'Art gallery', noun: 'artwork', ambient: true,  fetch: fetchNextArt,     show: showArt   },
   };
   const states = { photos: newState(), art: newState() };
-  function newState() { return { history: [], pos: -1, prefetched: null, current: null }; }
+  // pinned (photos): the user walked into a day with the ring; auto-advance then stays in it.
+  // prefetchSeq: a prefetch started before the user stepped elsewhere is dropped when it lands.
+  function newState() { return { history: [], pos: -1, prefetched: null, prefetchSeq: 0, current: null, pinned: false }; }
 
   let mode = params.get('mode') ?? localStorage.getItem(MODE_KEY) ?? 'photos';
   if (!MODES[mode]) mode = 'photos';
@@ -433,7 +436,7 @@
     return res.json();
   }
 
-  // Left/Right in photos mode: step through the photos taken the same day
+  // ←/→ in photos mode: step through the photos taken the same day (wraps)
   async function goSameDay(dir) {
     const st = states.photos;
     if (busy || !st.current) return;
@@ -443,12 +446,38 @@
       const asset   = st.current.asset;
       const payload = await fetchSameDay(assetDate(asset), asset.id, dir);
       if (my !== nav) return;
+      st.pinned = true;
+      pushHistory(st, payload);
       showItem(payload);
       setDayIndicator(payload.index, payload.total);
-      // Keep this slot in sync so Up/Down restores the last Left/Right position
-      if (st.pos >= 0) st.history[st.pos] = payload;
     } catch (e) {
       console.error('goSameDay:', e);
+      if (my === nav) showStatus(`Could not load photo\n${e.message}`);
+    } finally {
+      if (my === nav) busy = false;
+    }
+  }
+
+  // ↑/↓ in photos mode: first photo of the nearest newer (dir=-1) or older (dir=1) day
+  async function stepDay(dir) {
+    const st = states.photos;
+    if (busy || !st.current) return;
+    busy = true;
+    const my = nav;
+    try {
+      const date = assetDate(st.current.asset);
+      const res  = await fetch(`${PROXY}/day-nav?date=${encodeURIComponent(date)}&dir=${dir}`);
+      if (my !== nav) return;
+      if (res.status === 404) { showStatus(dir > 0 ? 'No earlier day' : 'No later day', { ms: 1500 }); return; }
+      if (!res.ok) throw new Error(`/day-nav ${res.status}`);
+      const payload = await res.json();
+      if (my !== nav) return;
+      st.pinned = true;
+      pushHistory(st, payload);
+      showItem(payload);
+      setDayIndicator(payload.index, payload.total);
+    } catch (e) {
+      console.error('stepDay:', e);
       if (my === nav) showStatus(`Could not load photo\n${e.message}`);
     } finally {
       if (my === nav) busy = false;
@@ -467,16 +496,103 @@
     artTitleEl.textContent  = payload.title  || '';
     artArtistEl.textContent = payload.artist || '';
     revealLabel();
+    // The gallery on screen is the current one (history can bring back another gallery's work)
+    const gi = art.galleries.findIndex(g => g.id === payload.gallery);
+    if (gi !== -1) art.idx = gi;
+    const order = art.orders.get(payload.gallery);
+    if (order && Number.isInteger(payload.pos)) order.pos = payload.pos;
   }
 
-  async function fetchRandomArt() {
-    const res = await fetch(`${PROXY}/art/random`);
+  // ---- Art galleries (moods) ----
+  // Each subfolder of the art dir is a gallery, 'all' first. Every gallery's order is shuffled
+  // once per session so ←/→ walk it without repeats until it wraps.
+  const art = { galleries: [], idx: 0, orders: new Map() };   // orders: gallery id -> { files, pos }
+  const curGallery = () => art.galleries[art.idx] ?? null;
+
+  async function fetchJson(url) {
+    const res = await fetch(url);
     if (!res.ok) {
-      let msg = `/art/random ${res.status}`;
+      let msg = `${new URL(url).pathname} ${res.status}`;
       try { msg = (await res.json()).error ?? msg; } catch {}
       throw new Error(msg);
     }
     return res.json();
+  }
+
+  async function loadGalleries() {
+    if (art.galleries.length) return;
+    const list = await fetchJson(`${PROXY}/art/galleries`);
+    art.galleries = Array.isArray(list) && list.length ? list : [{ id: 'all', label: 'All', count: 0 }];
+    const found = art.galleries.findIndex(g => g.id === localStorage.getItem(GALLERY_KEY));
+    art.idx = found === -1 ? 0 : found;
+  }
+
+  async function galleryOrder(id) {
+    let order = art.orders.get(id);
+    if (order) return order;
+    const files = await fetchJson(`${PROXY}/art/list?gallery=${encodeURIComponent(id)}`);
+    for (let i = files.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [files[i], files[j]] = [files[j], files[i]];
+    }
+    order = { files, pos: -1 };
+    art.orders.set(id, order);
+    return order;
+  }
+
+  async function fetchArtAt(id, pos) {
+    const order = await galleryOrder(id);
+    const n = order.files.length;
+    if (!n) throw new Error(`No artworks in gallery ${id}`);
+    pos = ((pos % n) + n) % n;
+    const payload = await fetchJson(`${PROXY}/art/image?file=${encodeURIComponent(order.files[pos].file)}`);
+    return { ...payload, gallery: id, pos };
+  }
+
+  // Auto-advance in art mode: the next work of the current gallery
+  async function fetchNextArt() {
+    await loadGalleries();
+    const g = curGallery();
+    const order = await galleryOrder(g.id);
+    return fetchArtAt(g.id, order.pos + 1);
+  }
+
+  // ←/→ in art mode
+  async function stepArt(dir) {
+    const st = states.art;
+    if (busy) return false;
+    busy = true;
+    const my = nav;
+    try {
+      await loadGalleries();
+      const g = curGallery();
+      const order = await galleryOrder(g.id);
+      const payload = await fetchArtAt(g.id, order.pos + dir);
+      if (my !== nav) return false;
+      st.prefetchSeq++;          // whatever was prefetched is for another position now
+      st.prefetched = null;
+      pushHistory(st, payload);
+      showItem(payload);
+      prefetch(st, MODES.art);
+      return true;
+    } catch (e) {
+      console.error('stepArt:', e);
+      if (my === nav) showStatus(`Could not load artwork\n${e.message}`);
+      return false;
+    } finally {
+      if (my === nav) busy = false;
+    }
+  }
+
+  // ↑/↓ in art mode: previous / next gallery, continuing where that gallery was left
+  async function stepArtGallery(dir) {
+    if (busy) return;
+    try { await loadGalleries(); } catch (e) { showStatus(`Could not load galleries\n${e.message}`); return; }
+    const n = art.galleries.length;
+    art.idx = ((art.idx + dir) % n + n) % n;
+    const g = curGallery();
+    localStorage.setItem(GALLERY_KEY, g.id);
+    if (await stepArt(1)) showStatus(`◆ ${g.label} · ${g.count}`, { ms: 1600 });
   }
 
   // ---- Shared navigation ----
@@ -498,11 +614,18 @@
   }
 
   async function prefetch(st, m) {
-    try { st.prefetched = await m.fetch(); } catch { st.prefetched = null; }
+    const seq = ++st.prefetchSeq;
+    let payload = null;
+    try { payload = await m.fetch(); } catch {}
+    if (seq === st.prefetchSeq) st.prefetched = payload;
   }
 
   async function goForward() {
     if (busy) return;
+    if (mode === 'photos' && states.photos.pinned && states.photos.pos >= states.photos.history.length - 1) {
+      goSameDay(1);
+      return;
+    }
     busy = true;
     const my = nav, st = state(), m = MODES[mode];
     try {
@@ -535,8 +658,36 @@
     showItem(st.history[st.pos]);
   }
 
+  // The ring, by mode
+  function stepPicture(dir) { mode === 'art' ? stepArt(dir) : goSameDay(dir); }
+  function stepGallery(dir) { mode === 'art' ? stepArtGallery(dir) : stepDay(dir); }
+
+  // Same colour button again: leave the gallery, back to the random flow
+  function reshuffle() {
+    if (mode === 'photos') {
+      states.photos.pinned = false;
+      goForward();
+    } else {
+      art.idx = 0;
+      localStorage.setItem(GALLERY_KEY, 'all');
+      stepArt(1);
+    }
+  }
+
+  // OK: what is on screen and what is playing
+  function showInfo() {
+    if (mode === 'art') {
+      revealLabel();
+      const g = curGallery();
+      if (g) showStatus(`◆ ${g.label} · ${g.count}`, { ms: MUSIC_INFO_SHOW });
+    }
+    const pl = curPlaylist();
+    if (pl) showMusicInfo(musicOn ? formatTrackDisplay(pl) : 'off');
+  }
+
   function setMode(next, { announce = true } = {}) {
     if (!MODES[next]) return;
+    if (next === mode && states[next].pos >= 0) { reshuffle(); return; }
     mode = next;
     localStorage.setItem(MODE_KEY, mode);
     document.body.dataset.mode = mode;
@@ -663,14 +814,22 @@
     playTrack(pl.idx + dir, { resume: false });
   }
 
-  function cyclePlaylist(dir = 1) {
+  function cyclePlaylist(dir = 1) { setPlaylist(playlistIdx + dir); }
+
+  // Number keys 1–5: station in the order the proxy lists them
+  function selectPlaylist(idx) {
+    if (idx < playlists.length) setPlaylist(idx);
+    else showMusicInfo(playlists.length ? `only ${playlists.length} stations` : 'no tracks');
+  }
+
+  function setPlaylist(idx) {
     if (!playlists.length) { showMusicInfo('no tracks'); return; }
     const prev = curPlaylist();
     if (prev && !prev.shuffle && !prev.live && audio.currentTime > 5) {
       prev.resumeTime = audio.currentTime;
       savePlaylistPos(prev, audio.currentTime);
     }
-    playlistIdx = ((playlistIdx + dir) % playlists.length + playlists.length) % playlists.length;
+    playlistIdx = ((idx % playlists.length) + playlists.length) % playlists.length;
     const pl = curPlaylist();
     localStorage.setItem(PLAYLIST_KEY, pl.id);
     if (!musicOn) {
@@ -787,9 +946,12 @@
   }
 
   // ---- Keyboard ----
-  // webOS remote: CH up/down are keyCode 427/428, Back is 461, the colour buttons 403-406
-  // (red, green, yellow, blue; within thumb reach, unlike the number pad); play/pause arrive as media keys.
-  const CH_UP = 427, CH_DOWN = 428, BACK = 461;
+  // Magic Remote (MR21/MR22 layout): the ring is pictures and galleries, CH ▲▼ are tracks, the
+  // colour buttons (403-406, under the OK ring) are mode / audio / station, the number pad at the
+  // top is for direct jumps. webOS keyCodes: Back 461; LG documents CH up/down as 427/428, but the
+  // C3 (webOS 11.2) delivers them as PageUp/PageDown (33/34), so both are handled. This remote has
+  // no play/pause or skip keys; the media-key branches serve voice control and other remotes.
+  const CH_UP = 427, CH_DOWN = 428, PAGE_UP = 33, PAGE_DOWN = 34, BACK = 461;
   const RED = 403, GREEN = 404, YELLOW = 405, BLUE = 406;
   const MEDIA_TOGGLE = new Set(['MediaPlayPause', 'MediaPlay', 'MediaPause']);
 
@@ -803,12 +965,13 @@
     // A desktop browser blocks autoplay until the first key press; retry then.
     if (musicOn && playlists.length && audio.paused && audio.src) audio.play().catch(() => {});
 
-    if (e.keyCode === RED)     { e.preventDefault(); setMode('photos');  return; }
-    if (e.keyCode === GREEN)   { e.preventDefault(); setMode('art');     return; }
+    if (e.keyCode === RED)     { e.preventDefault(); setMode('photos');  return; }   // again: shuffle
+    if (e.keyCode === GREEN)   { e.preventDefault(); setMode('art');     return; }   // again: all moods
     if (e.keyCode === YELLOW)  { e.preventDefault(); toggleMusic();      return; }
     if (e.keyCode === BLUE)    { e.preventDefault(); cyclePlaylist(1);   return; }
-    if (e.keyCode === CH_UP)   { e.preventDefault(); cyclePlaylist(1);   return; }
-    if (e.keyCode === CH_DOWN) { e.preventDefault(); cyclePlaylist(-1);  return; }
+    if (e.keyCode === CH_UP   || e.keyCode === PAGE_UP)   { e.preventDefault(); stepTrack(1);  return; }
+    if (e.keyCode === CH_DOWN || e.keyCode === PAGE_DOWN) { e.preventDefault(); stepTrack(-1); return; }
+    if (e.keyCode === BACK)    { e.preventDefault(); goBack();           return; }
     if (e.key === 'MediaTrackNext'     || e.keyCode === 417) { e.preventDefault(); stepTrack(1);  return; }
     if (e.key === 'MediaTrackPrevious' || e.keyCode === 412) { e.preventDefault(); stepTrack(-1); return; }
     if (MEDIA_TOGGLE.has(e.key) || e.keyCode === 179 || e.keyCode === 415 || e.keyCode === 19) {
@@ -816,18 +979,17 @@
     }
 
     switch (e.key) {
-      case 'ArrowDown':  e.preventDefault(); goForward();    break;
-      case 'ArrowUp':    e.preventDefault(); goBack();       break;
-      case 'ArrowLeft':  e.preventDefault(); stepTrack(-1);  break;
-      case 'ArrowRight': e.preventDefault(); stepTrack(1);   break;
+      case 'ArrowLeft':  e.preventDefault(); stepPicture(-1); break;
+      case 'ArrowRight': e.preventDefault(); stepPicture(1);  break;
+      case 'ArrowUp':    e.preventDefault(); stepGallery(-1); break;
+      case 'ArrowDown':  e.preventDefault(); stepGallery(1);  break;
       case 'Enter':
-      case ' ':          e.preventDefault(); if (mode === 'art') revealLabel(); break;
-      case '1':          e.preventDefault(); setMode('photos');  break;
-      case '2':          e.preventDefault(); setMode('art');     break;
-      case '3':          e.preventDefault(); toggleMusic();      break;
-      case '4':          e.preventDefault(); cyclePlaylist(1);   break;
-      case '0':          e.preventDefault(); openConfig();       break;
-      case 'Escape':     e.preventDefault();                     break;
+      case ' ':          e.preventDefault(); showInfo();      break;
+      case 'Backspace':  e.preventDefault(); goBack();        break;
+      case '1': case '2': case '3': case '4': case '5':
+                         e.preventDefault(); selectPlaylist(Number(e.key) - 1); break;
+      case '0':          e.preventDefault(); openConfig();    break;
+      case 'Escape':     e.preventDefault();                  break;
     }
   });
 
