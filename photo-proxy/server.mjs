@@ -199,6 +199,12 @@ function listFiles(dir, exts) {
 }
 
 const POLISH_RADIO_STREAMS = [
+  { name: 'Eska2 (100% Polish Hits)',               url: 'http://waw.ic.smcdn.pl/1370-1.mp3',                          mode: 'direct' },
+  { name: 'RMF Polskie Przeboje (Polish Pop)',      url: 'http://195.150.20.242:8000/rmf_polskie_przeboje',           mode: 'direct' },
+  { name: 'RMF Polski Rock (Polish Rock)',          url: 'http://195.150.20.242:8000/rmf_polski_rock',                mode: 'direct' },
+  { name: 'Eska Rock (Rock & Polish Rock)',         url: 'http://ic1.smcdn.pl/5380-1.mp3',                             mode: 'direct' },
+  { name: 'Antyradio (Rock & Polish Rock)',         url: 'https://ant-waw-01.cdn.eurozet.pl/ant-waw.mp3',             mode: 'direct' },
+  { name: 'RMF Chopin (Polish Classical)',          url: 'http://195.150.20.242:8000/rmf_chopin',                     mode: 'direct' },
   { name: 'Radio Nowy Świat (Indie & Culture)',     url: 'https://stream.rcs.revma.com/ypqt40u0x1zuv',                 mode: 'direct' },
   { name: 'Radio 357 (Indie Rock)',                 url: 'https://stream.radio357.pl/',                                mode: 'direct' },
   { name: 'Polskie Radio Trójka (Rock & Culture)',   url: 'https://stream13.polskieradio.pl/pr3/pr3.sdp/playlist.m3u8', mode: 'ffmpeg' },
@@ -344,16 +350,17 @@ async function fetchStationNowPlaying(streamDef) {
   let title = null;
 
   try {
-    // 1. Stations with rich ICY stream titles (RMF Classic, RMF FM, Radio 357, Radio Nowy Świat)
-    if (name.includes('RMF') || name.includes('357') || name.includes('Nowy Świat')) {
+    // 1. Stations with rich ICY stream titles (RMF, Radio 357, Radio Nowy Świat, Eska)
+    if (name.includes('RMF') || name.includes('357') || name.includes('Nowy Świat') || name.includes('Eska')) {
       title = await readIcyStreamTitle(streamDef.url);
     }
 
-    // 2. Radio ZET — Eurozet RDS history API
-    if (!title && name.includes('ZET')) {
+    // 2. Radio ZET & Antyradio — Eurozet RDS history API
+    if (!title && (name.includes('ZET') || name.includes('Antyradio'))) {
       try {
+        const emitter = name.includes('Antyradio') ? 'antyradio' : 'radiozet';
         const t = Math.floor(now / 1000);
-        const res = await fetch(`https://rds.eurozet.pl/reader/history.php?callback=jsonData&startDate=${t - 1800}&emitter=radiozet&trackCount=5`, {
+        const res = await fetch(`https://rds.eurozet.pl/reader/history.php?callback=jsonData&startDate=${t - 1800}&emitter=${emitter}&trackCount=5`, {
           signal: AbortSignal.timeout(3000),
         });
         const txt = await res.text();
@@ -765,8 +772,8 @@ const server = http.createServer(async (req, res) => {
     const rawStream = url.searchParams.get('stream') || '';
     let streamName;
     try { streamName = decodeURIComponent(rawStream); } catch { streamName = rawStream; }
-    const pl = PLAYLIST_DEFS.find(p => p.streams);
-    const streamDef = pl?.streams?.find(s => s.name === streamName || s.name.startsWith(streamName + ' (') || streamName.startsWith(s.name));
+    const allStreams = PLAYLIST_DEFS.filter(p => p.streams).flatMap(p => p.streams);
+    const streamDef = allStreams.find(s => s.name === streamName || s.name.startsWith(streamName + ' (') || streamName.startsWith(s.name));
     if (!streamDef) {
       sendJson(res, 200, { station: streamName, nowPlaying: null });
       return;

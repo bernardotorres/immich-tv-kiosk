@@ -17,8 +17,7 @@ galleries: `←` / `→` previous/next picture, `↑` / `↓` previous/next gall
 `OK` shows the labels, `Back` the previous picture. Artwork legends are named in the artist's
 original language (German for Caspar David Friedrich, Dutch for Van Gogh). The default art images
 and ambient/classical tracks live next to the proxy on peri, `~/codes/photoskiosk/photo-proxy/{art,tracks}/`,
-synced by `deploy.sh`; `Polish Radio` streams 10 live Polish stations (Radio Nowy Świat, Radio 357,
-Polskie Radio Jedynka/Dwójka/Trójka/24, TOK FM, RMF Classic, RMF FM, Radio ZET); `Polish Learning`
+synced by `deploy.sh`; `Polish Radio` streams 16 live Polish stations, featuring pure Polish music and rock channels (Eska2 100% Polish Hits, RMF Polskie Przeboje, RMF Polski Rock, Eska Rock, Antyradio, RMF Chopin) alongside talk and news broadcasts (Radio Nowy Świat, Radio 357, Polskie Radio Jedynka/Dwójka/Trójka/24, TOK FM, RMF Classic, RMF FM, Radio ZET); `Polish Learning`
 reads from `~/Library/books/Polski/Pimsleur/Pimsleur - Polish I` (sequential order, resuming last
 unit and timestamp); `Maria Callas` from `~/Library/musik/callas`; and `DJ Sets` from
 `~/Library/musik/sets`. `~/codes/artgallery` on the Mac is now only history and can be deleted; the
