@@ -63,6 +63,7 @@ after that, refetch the key from `http://192.168.178.41:9991/webos_rsa` and rein
 `launch_kiosk.py` now also treats power state `Screen Saver` as idle and takes over immediately;
 before, the `!= "Active"` guard read it as standby and never launched. Installed 1.0.1 (and artgallery 1.0.4) the same day with `screenSaverProperties.preferredType: 3` in `appinfo.json`: before, LG's clock screensaver was drawn over the running kiosk (foreground app stayed the kiosk, power state `Screen Saver`), and a relaunch does not clear it. The manifest setting turned out not to be honoured; 1.0.4 (same evening) refuses the screensaver through the tvpower service instead, see README. `ares-*` must run under
 Node 22 (`~/.nvm/versions/node/v22.22.2/bin`): under Node 25 the CLI dies with `isDate is not a function`.
+If `ares-install` gets `ECONNREFUSED 192.168.178.41:9922` the Developer Mode session has lapsed; install the ipk over root ssh instead (recipe in `~/codes/peri/devices/tv/AGENTS.md`, "Install, launch, remove a webOS app (root path)"), as done for 1.3.2 on 2026-11-01. `hosted/index.html` is a gitignored copy of `kiosk.html`; the TV runs the packaged copy, not the page the proxy serves, so a `kiosk.html` change needs a new ipk.
 
 Missing previews (2026-10-09). Immich answers 404 for the preview of ~9.9k assets whose originals are
 damaged (see `~/codes/peri/RECOVERY-LIBRARY.md`, immich row). `server.mjs` retries `/random` with another

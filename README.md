@@ -93,7 +93,7 @@ The default proxy URL is in `kiosk.html` (`DEFAULT_PROXY`) and can be changed on
 ```bash
 cp photo-proxy/kiosk.html hosted/index.html
 ares-package hosted/
-ares-install --device <your-device> com.torres.immichscreen_1.3.1_all.ipk
+ares-install --device <your-device> com.torres.immichscreen_1.3.2_all.ipk
 ares-launch  --device <your-device> com.torres.immichscreen
 ```
 
