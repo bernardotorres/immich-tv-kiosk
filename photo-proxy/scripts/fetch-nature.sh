@@ -34,7 +34,7 @@ fetch() {
   magic="$(head -c 4 "$2.part" | od -An -tx1 | tr -d ' \n')"
   if [[ "$magic" == 52494646 ]]; then
     # WAV (some xeno-canto uploads): transcode so the TV gets mp3 like the rest
-    ffmpeg -nostdin -loglevel error -y -i "$2.part" -codec:a libmp3lame -b:a 192k "$2.mp3.part" \
+    ffmpeg -nostdin -loglevel error -y -i "$2.part" -codec:a libmp3lame -b:a 192k -f mp3 "$2.mp3.part" \
       && mv "$2.mp3.part" "$2.part" || { log "SKIP wav-transcode-failed $(basename "$2")"; rm -f "$2.part" "$2.mp3.part"; return 1; }
   elif [[ "$magic" != 494433* && "$magic" != ff* ]]; then
     log "SKIP not-mp3 $(basename "$2")"; rm -f "$2.part"; return 1
