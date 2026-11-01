@@ -15,6 +15,7 @@ const TRACKS_DIR   = process.env.TRACKS_DIR   ?? path.join(__dirname, 'tracks');
 const PIMSLEUR_DIR = process.env.PIMSLEUR_DIR ?? '/home/bernardo/Library/books/Polski/Pimsleur/Pimsleur - Polish I';
 const CALLAS_DIR   = process.env.CALLAS_DIR   ?? '/home/bernardo/Library/musik/callas';
 const SETS_DIR     = process.env.SETS_DIR     ?? '/home/bernardo/Library/musik/sets';
+const NATURE_DIR   = process.env.NATURE_DIR   ?? '/home/bernardo/Library/musik/nature';
 if (!API_KEY) { console.error('IMMICH_API_KEY is not set'); process.exit(1); }
 const HEADERS = { 'x-api-key': API_KEY };
 
@@ -217,12 +218,26 @@ const POLISH_RADIO_STREAMS = [
   { name: 'Radio ZET (Pop & Rock Hits)',            url: 'https://zt01.cdn.eurozet.pl/zet-net.mp3',                    mode: 'direct' },
 ];
 
+const NATURE_STREAMS = [
+  { name: 'MyNoise Pure Nature (Field Recordings)', url: 'https://purenature-mynoise.radioca.st/stream',                        mode: 'direct' },
+  { name: 'Ambi Nature Radio (Field Recordings)',   url: 'https://nature-rex.radioca.st/stream',                               mode: 'direct' },
+  { name: 'Nature Radio Rain',                      url: 'https://maggie.torontocast.com:2020/stream/natureradiorain',         mode: 'direct' },
+  { name: 'Nature Radio Sleep (Forest & Birds)',    url: 'https://az1.mediacp.eu/listen/natureradiosleep/radio.mp3',           mode: 'direct' },
+  { name: 'LiSTNR Rainforest',                      url: 'http://sa47.scastream.com.au/live/rainforest_128.stream/playlist.m3u8', mode: 'ffmpeg' },
+  { name: 'LiSTNR Light Rain',                      url: 'http://sa46.scastream.com.au/live/lightrain_128.stream/playlist.m3u8',  mode: 'ffmpeg' },
+  { name: 'LiSTNR Waterfall',                       url: 'http://sa47.scastream.com.au/live/waterfall_128.stream/playlist.m3u8',  mode: 'ffmpeg' },
+  { name: '24/7 Nature Radio',                      url: 'https://ec3.yesstreaming.net:3545/stream',                            mode: 'direct' },
+  { name: 'Sleepscapes Rain',                       url: 'https://stream.willstare.com:8850/;',                                 mode: 'direct' },
+];
+
 const PLAYLIST_DEFS = [
   { id: 'ambient',      label: 'Ambient & Classical', dir: TRACKS_DIR,   shuffle: true,  live: false },
   { id: 'polish-radio', label: 'Polish Radio',        streams: POLISH_RADIO_STREAMS, shuffle: false, live: true  },
   { id: 'pimsleur',     label: 'Polish Learning',     dir: PIMSLEUR_DIR, shuffle: false, live: false },
   { id: 'callas',       label: 'Maria Callas',        dir: CALLAS_DIR,   shuffle: true,  live: false },
   { id: 'sets',         label: 'DJ Sets',             dir: SETS_DIR,     shuffle: true,  live: false },
+  { id: 'nature',       label: 'Nature Sounds',       dir: NATURE_DIR,   shuffle: true,  live: false },
+  { id: 'nature-live',  label: 'Nature Radio',        streams: NATURE_STREAMS, shuffle: false, live: true  },
 ];
 
 function getPlaylists() {

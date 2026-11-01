@@ -263,7 +263,7 @@
     <div id="config-hint">
       Enter → Save &amp; restart &nbsp;·&nbsp; Back/Esc → Cancel<br>
       <span style="color:#e8657a">●</span> Photos &nbsp;·&nbsp; <span style="color:#6ccf7a">●</span> Art &nbsp;·&nbsp; <span style="color:#f2e05a">●</span> Audio on/off &nbsp;·&nbsp; <span style="color:#6a8ff0">●</span> Next station &nbsp;·&nbsp; same colour again: shuffle<br>
-      ←→ Picture &nbsp;·&nbsp; ↑↓ Gallery (day / mood) &nbsp;·&nbsp; OK Info &nbsp;·&nbsp; Back Previous &nbsp;·&nbsp; CH ▲▼ Track &nbsp;·&nbsp; 1–5 Station
+      ←→ Picture &nbsp;·&nbsp; ↑↓ Gallery (day / mood) &nbsp;·&nbsp; OK Info &nbsp;·&nbsp; Back Previous &nbsp;·&nbsp; CH ▲▼ Track &nbsp;·&nbsp; 1–7 Station
     </div>
   </div>
 </div>
@@ -816,7 +816,7 @@
 
   function cyclePlaylist(dir = 1) { setPlaylist(playlistIdx + dir); }
 
-  // Number keys 1–5: station in the order the proxy lists them
+  // Number keys 1–7: station in the order the proxy lists them
   function selectPlaylist(idx) {
     if (idx < playlists.length) setPlaylist(idx);
     else showMusicInfo(playlists.length ? `only ${playlists.length} stations` : 'no tracks');
@@ -986,7 +986,7 @@
       case 'Enter':
       case ' ':          e.preventDefault(); showInfo();      break;
       case 'Backspace':  e.preventDefault(); goBack();        break;
-      case '1': case '2': case '3': case '4': case '5':
+      case '1': case '2': case '3': case '4': case '5': case '6': case '7':
                          e.preventDefault(); selectPlaylist(Number(e.key) - 1); break;
       case '0':          e.preventDefault(); openConfig();    break;
       case 'Escape':     e.preventDefault();                  break;

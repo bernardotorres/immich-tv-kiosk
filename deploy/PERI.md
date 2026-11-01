@@ -9,9 +9,9 @@ Source is this repo, `~/codes/photoskiosk` — not `~/codes/peri`. Not to be con
 **Merged with the art gallery (2026-10-18) + radio stations & original-language legends (2026-10-20) + ring/gallery remote layout (2026-10-27, 1.3.0).** The former `com.torres.artgallery` app and its
 `art-proxy` (port 3003, never deployed to peri) are folded into this app and this proxy as the
 *Art* mode. Remote (Magic Remote MR21/MR22 layout): green switches to art, red back to photos
-(the same colour again reshuffles), yellow toggles audio, blue (or `1`–`5` directly) switches the
+(the same colour again reshuffles), yellow toggles audio, blue (or `1`–`7` directly) switches the
 station (`Ambient & Classical`, `Polish Radio` live streams, `Polish Learning` Pimsleur course,
-`Maria Callas`, `DJ Sets`), `CH ▲` / `CH ▼` the track/stream within it. The ring is pictures and
+`Maria Callas`, `DJ Sets`, `Nature Sounds`, `Nature Radio`), `CH ▲` / `CH ▼` the track/stream within it. The ring is pictures and
 galleries: `←` / `→` previous/next picture, `↑` / `↓` previous/next gallery — a day in Photos
 (`/day-nav`), a mood in Art (`art/{calm,drama,colour,playful}/` subfolders on peri, plus `All`);
 `OK` shows the labels, `Back` the previous picture. Artwork legends are named in the artist's
@@ -20,7 +20,7 @@ and ambient/classical tracks live next to the proxy on peri, `~/codes/photoskios
 synced by `deploy.sh`; `Polish Radio` streams 16 live Polish stations, featuring pure Polish music and rock channels (Eska2 100% Polish Hits, RMF Polskie Przeboje, RMF Polski Rock, Eska Rock, Antyradio, RMF Chopin) alongside talk and news broadcasts (Radio Nowy Świat, Radio 357, Polskie Radio Jedynka/Dwójka/Trójka/24, TOK FM, RMF Classic, RMF FM, Radio ZET); `Polish Learning`
 reads from `~/Library/books/Polski/Pimsleur/Pimsleur - Polish I` (sequential order, resuming last
 unit and timestamp); `Maria Callas` from `~/Library/musik/callas`; and `DJ Sets` from
-`~/Library/musik/sets`. `~/codes/artgallery` on the Mac is now only history and can be deleted; the
+`~/Library/musik/sets`. `Nature Sounds` from `~/Library/musik/nature` (flat folder of hour-scale recordings: four Internet Archive collections, CC0 or uploader's own, plus xeno-canto soundscapes from the Amazon, Mata Atlântica, Pantanal/Cerrado, Germany and Poland; filled on peri by `photo-proxy/scripts/fetch-nature.sh`, idempotent, log in `fetch.log`, attribution in `credits.tsv`; never synced by `deploy.sh`); `Nature Radio` streams 9 live nature stations (MyNoise Pure Nature, Ambi Nature Radio, Nature Radio Rain/Sleep, LiSTNR Rainforest/Light Rain/Waterfall via ffmpeg, 24/7 Nature Radio, Sleepscapes Rain). `~/codes/artgallery` on the Mac is now only history and can be deleted; the
 old app can be removed from the TV with `ares-install --device Odeon --remove com.torres.artgallery`.
 
 | Component | Location |
@@ -28,8 +28,8 @@ old app can be removed from the TV with `ares-install --device Odeon --remove co
 | Source | `~/codes/photoskiosk` (`photo-proxy/server.mjs`, `hosted/` webOS package) |
 | Deployed proxy | `peri:~/codes/photoskiosk/photo-proxy/` (same path as on the Mac), user unit `photo-proxy.service`, `0.0.0.0:3002` |
 | Redeploy | `~/codes/photoskiosk/deploy/deploy.sh` |
-| Env | `peri:~/codes/photoskiosk/photo-proxy/.env` (`IMMICH_API_KEY`, `IMMICH_BASE`, `PORT`; optional `ART_DIR`, `TRACKS_DIR`, `PIMSLEUR_DIR`, `CALLAS_DIR`, `SETS_DIR`) |
-| Art / audio | `peri:~/codes/photoskiosk/photo-proxy/art/` (27 artworks in four moods: `calm/` 6 Friedrich, Meirelles, Américo · `drama/` 10 Danby, Américo, Meirelles, Friedrich's Eismeer · `colour/` 3 Van Gogh · `playful/` 8 Christoph Niemann), `.../tracks/` (19 ambient & classical mp3s), plus `Pimsleur Polish I` (30 units), `Maria Callas` (8 recordings), `DJ Sets` (12 sets) |
+| Env | `peri:~/codes/photoskiosk/photo-proxy/.env` (`IMMICH_API_KEY`, `IMMICH_BASE`, `PORT`; optional `ART_DIR`, `TRACKS_DIR`, `PIMSLEUR_DIR`, `CALLAS_DIR`, `SETS_DIR`, `NATURE_DIR`; `XENO_CANTO_KEY` is read only by `fetch-nature.sh`, from 1Password Personal item "Xeno-canto") |
+| Art / audio | `peri:~/codes/photoskiosk/photo-proxy/art/` (27 artworks in four moods: `calm/` 6 Friedrich, Meirelles, Américo · `drama/` 10 Danby, Américo, Meirelles, Friedrich's Eismeer · `colour/` 3 Van Gogh · `playful/` 8 Christoph Niemann), `.../tracks/` (19 ambient & classical mp3s), plus `Pimsleur Polish I` (30 units), `Maria Callas` (8 recordings), `DJ Sets` (12 sets), `Nature Sounds` (`~/Library/musik/nature`) |
 | TV | `192.168.178.41`, HA entry `webostv` "Odeon", dev-mode ssh on 9922 (`ares-* --device Odeon`) |
 | Launch | HA automation `tv_kiosk_screensaver` (every 30s) → `shell_command.launch_kiosk` → `/config/launch_kiosk.py` |
 

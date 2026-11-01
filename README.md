@@ -5,7 +5,7 @@ A fullscreen kiosk for LG webOS TVs with two modes, switched from the remote:
 - **Photos** — random pictures from your [Immich](https://immich.app) library, with same-day browsing.
 - **Art** — paintings from a folder on the server, with a blurred ambient background and a museum-style label (title + artist).
 
-A shuffled ambient soundtrack plays in both modes. Pictures rotate every 60 seconds; a crossfade and a minimal clock overlay keep it clean.
+A shuffled soundtrack (ambient & classical, Polish radio, nature sounds and more; blue key cycles stations) plays in both modes. Pictures rotate every 60 seconds; a crossfade and a minimal clock overlay keep it clean.
 
 ## Architecture
 
@@ -35,9 +35,9 @@ the top is for direct jumps. A *gallery* is a day in Photos and a mood in Art.
 | Red | Switch to Photos. Again while in Photos: leave the day, new random photo | — |
 | Green | — | Switch to Art. Again while in Art: back to `All`, next artwork |
 | Yellow / Play-Pause | Audio on / off | same |
-| Blue | Next station (`Ambient & Classical` → `Polish Radio` → `Polish Learning` → `Maria Callas` → `DJ Sets`) | same |
+| Blue | Next station (`Ambient & Classical` → `Polish Radio` → `Polish Learning` → `Maria Callas` → `DJ Sets` → `Nature Sounds` → `Nature Radio`) | same |
 | CH ▲ / CH ▼ | Next / previous track (or live stream / lesson unit) within the station | same |
-| 1 – 5 | Station directly, in that order | same |
+| 1 – 7 | Station directly, in that order | same |
 | 0 | Open the proxy URL settings | same |
 
 The Magic Remote (MR21/MR22 layout) has no play/pause or skip keys; those branches serve voice control and other remotes. VOL, MUTE, HOME, MIC, INPUT, GUIDE, ··· and the streaming buttons never reach the app. On the C3 (webOS 11.2) CH ▲ / ▼ arrive as `PageUp` / `PageDown` (keyCode 33/34), not as LG's documented 427/428; the page accepts both. Key codes as this TV really sends them are listed in `~/codes/peri/devices/tv/AGENTS.md`.
