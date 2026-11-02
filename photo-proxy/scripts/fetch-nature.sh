@@ -112,7 +112,8 @@ SETS = [
     ("Brasil Mata Atlântica", "grp:soundscape box:-30,-52,-8,-34 len:\">600\"", 60),
     ("Deutschland", "grp:soundscape cnt:germany len:\">1200\"", 40),
     ("Polska", "grp:soundscape cnt:poland len:\">300\"", 60),
-    ("Brasil Santa Catarina", "box:-29.5,-54,-25.9,-48.2 len:\">180\"", 25),
+    ("Brasil Santa Catarina", "cnt:brazil loc:\"Santa Catarina\" len:\">150\"", 25),
+    ("Mata Atlântica Sul", "box:-30,-55,-25.5,-48 len:\">180\"", 25),
 ]
 
 def clean(s):
