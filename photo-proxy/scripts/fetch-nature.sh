@@ -19,6 +19,7 @@ IA_ITEMS="australian-forest-sounds relaxingrainsounds ocean-sea-sounds naturesou
 mkdir -p "$NATURE_DIR"
 LOG="$NATURE_DIR/fetch.log"
 CREDITS="$NATURE_DIR/credits.tsv"
+SKIP="$NATURE_DIR/skip.txt"
 exec >> "$LOG" 2>&1
 
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
@@ -43,6 +44,9 @@ fetch() {
   DOWNLOADED=1
   log "GET $(basename "$2")"
 }
+
+# skipped NAME: true when skip.txt lists this file name.
+skipped() { [[ -f "$SKIP" ]] && grep -qxF -- "$1" "$SKIP"; }
 
 # credit ID REGION REC LIC LOC LENGTH: append once per id.
 credit() {
@@ -80,6 +84,7 @@ for item in $IA_ITEMS; do
   while IFS=$'\t' read -r name lic base quoted; do
     [[ -n "$name" ]] || continue
     dest="$NATURE_DIR/${region} · ${base}.mp3"
+    if skipped "${region} · ${base}.mp3"; then log "SKIP listed ${region} · ${base}.mp3"; continue; fi
     if fetch "https://archive.org/download/$item/$quoted" "$dest"; then
       credit "ia:$item/$name" "$region" "Internet Archive" "$lic" "$base" "-"
     else
@@ -107,6 +112,7 @@ SETS = [
     ("Brasil Mata Atlântica", "grp:soundscape box:-30,-52,-8,-34 len:\">600\"", 60),
     ("Deutschland", "grp:soundscape cnt:germany len:\">1200\"", 40),
     ("Polska", "grp:soundscape cnt:poland len:\">300\"", 60),
+    ("Brasil Santa Catarina", "box:-29.5,-54,-25.9,-48.2 len:\">180\"", 25),
 ]
 
 def clean(s):
@@ -171,6 +177,7 @@ else
   while IFS=$'\t' read -r xid url target region rec lic loc length; do
     [[ -n "$xid" ]] || continue
     dest="$NATURE_DIR/$target"
+    if skipped "$target"; then log "SKIP listed $target"; continue; fi
     if fetch "$url" "$dest"; then
       credit "xc:$xid" "$region" "$rec" "$lic" "$loc" "$length"
       if [[ "$DOWNLOADED" -eq 1 ]]; then sleep 2; fi
