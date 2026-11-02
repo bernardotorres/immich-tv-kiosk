@@ -55,7 +55,7 @@ calm/Caspar David Friedrich - Der Wanderer über dem Nebelmeer.jpg   → mood + 
 colour/Van Gogh - De sterrennacht.jpg                               → mood + artist + title
 ```
 
-Drop `.mp3` (or `.ogg`, `.m4a`, `.wav`, `.flac`) into the tracks folder for the default `Ambient & Classical` playlist (shuffled). Additional playlists are served automatically when their folders exist (`PIMSLEUR_DIR` played in sequential order with saved position; `CALLAS_DIR` and `SETS_DIR` shuffled). Copyright-free ambient/classical sources: [Wikimedia Commons](https://commons.wikimedia.org/), [Free Music Archive](https://freemusicarchive.org/) (CC0 / CC BY), [Incompetech](https://incompetech.com/music/royalty-free/) (Kevin MacLeod, CC BY), [ccMixter](https://ccmixter.org/).
+Drop `.mp3` (or `.ogg`, `.m4a`, `.wav`, `.flac`) into the tracks folder for the default `Ambient & Classical` playlist (shuffled). Additional playlists are served automatically when their folders exist (`PIMSLEUR_DIR` played in sequential order with saved position; `CALLAS_DIR` and `SETS_DIR` shuffled). Nature Sounds comes from `NATURE_DIR` and is filled by `scripts/fetch-nature.sh`; a file name listed in `skip.txt` beside the recordings is never downloaded again. Copyright-free ambient/classical sources: [Wikimedia Commons](https://commons.wikimedia.org/), [Free Music Archive](https://freemusicarchive.org/) (CC0 / CC BY), [Incompetech](https://incompetech.com/music/royalty-free/) (Kevin MacLeod, CC BY), [ccMixter](https://ccmixter.org/).
 
 ## Setup
 
