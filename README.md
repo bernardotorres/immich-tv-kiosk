@@ -38,6 +38,7 @@ the top is for direct jumps. A *gallery* is a day in Photos and a mood in Art.
 | Blue | Next station (`Ambient & Classical` → `Polish Radio` → `Polish Learning` → `Maria Callas` → `DJ Sets` → `Nature Sounds` → `Nature Radio`) | same |
 | CH ▲ / CH ▼ | Next / previous track (or live stream / lesson unit) within the station | same |
 | 1 – 7 | Station directly, in that order | same |
+| 9 | Cycle display look (`Screen` → `Print` → `Gallery`) | same |
 | 0 | Open the proxy URL settings | same |
 
 The Magic Remote (MR21/MR22 layout) has no play/pause or skip keys; those branches serve voice control and other remotes. VOL, MUTE, HOME, MIC, INPUT, GUIDE, ··· and the streaming buttons never reach the app. On the C3 (webOS 11.2) CH ▲ / ▼ arrive as `PageUp` / `PageDown` (keyCode 33/34), not as LG's documented 427/428; the page accepts both. Key codes as this TV really sends them are listed in `~/codes/peri/devices/tv/AGENTS.md`.

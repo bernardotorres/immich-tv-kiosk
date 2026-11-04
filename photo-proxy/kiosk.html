@@ -38,6 +38,34 @@
     transition: opacity 0.8s ease;
   }
 
+  /* ---- Display look (art mode: paper instead of screen) ---- */
+  .look-room, .look-lift, .look-soften {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0;
+  }
+  .look-room {
+    background: radial-gradient(ellipse 85% 95% at 24% 6%, rgba(255,244,222,0.07) 0%, rgba(0,0,0,0) 38%, rgba(0,0,0,0.36) 100%);
+  }
+  .look-lift {
+    background: rgb(236,228,212);
+  }
+  .look-soften {
+    background: #000;
+  }
+  /* Pure black and an even glow give screens away; these veils make the OLED read like lit paper */
+  body[data-mode="photos"] .look-room,
+  body[data-mode="photos"] .look-lift,
+  body[data-mode="photos"] .look-soften { opacity: 0 !important; }
+  body[data-look="print"] .look-room   { opacity: 0.62; }
+  body[data-look="print"] .look-lift   { opacity: 0.07; }
+  body[data-look="print"] .look-soften { opacity: 0.10; }
+  body[data-look="gallery"] .look-room   { opacity: 1; }
+  body[data-look="gallery"] .look-lift   { opacity: 0.11; }
+  body[data-look="gallery"] .look-soften { opacity: 0.20; }
+
   /* ---- Overlays (above images) ---- */
   .overlay {
     position: fixed;
@@ -237,6 +265,10 @@
 <img id="img-a" src="" alt="">
 <img id="img-b" src="" alt="">
 
+<div id="look-room" class="look-room"></div>
+<div id="look-lift" class="look-lift"></div>
+<div id="look-soften" class="look-soften"></div>
+
 <div class="overlay" id="clock">00:00</div>
 <div class="overlay" id="day-indicator"></div>
 <div class="overlay" id="date-label"></div>
@@ -276,6 +308,7 @@
   const PLAYLIST_KEY        = 'kiosk_playlist';
   const PLAYLIST_POS_PREFIX = 'kiosk_playlist_pos_';
   const GALLERY_KEY         = 'kiosk_gallery';
+  const LOOK_KEY            = 'kiosk_look';
   const DEFAULT_PROXY       = 'http://192.168.178.250:3002';
   const params              = new URLSearchParams(location.search);
 
@@ -700,6 +733,17 @@
     else goForward();
   }
 
+  // ---- Display look (art mode only) ----
+  function cycleLook() {
+    const looks = ['screen', 'print', 'gallery'];
+    const current = localStorage.getItem(LOOK_KEY) ?? 'print';
+    const next = looks[(looks.indexOf(current) + 1) % looks.length];
+    localStorage.setItem(LOOK_KEY, next);
+    document.body.dataset.look = next;
+    const labels = { screen: 'Screen', print: 'Print', gallery: 'Gallery' };
+    showStatus(`Look · ${labels[next]}`, { ms: 1600 });
+  }
+
   // ---- Music / Playlists (both modes) ----
   let playlists   = [];   // [{ id, label, shuffle, order: [...], idx, resumeTime }]
   let playlistIdx = 0;
@@ -988,6 +1032,7 @@
       case 'Backspace':  e.preventDefault(); goBack();        break;
       case '1': case '2': case '3': case '4': case '5': case '6': case '7':
                          e.preventDefault(); selectPlaylist(Number(e.key) - 1); break;
+      case '9':          e.preventDefault(); cycleLook();     break;
       case '0':          e.preventDefault(); openConfig();    break;
       case 'Escape':     e.preventDefault();                  break;
     }
@@ -1028,6 +1073,7 @@
   refuseScreensaver();
 
   // ---- Boot ----
+  document.body.dataset.look = localStorage.getItem(LOOK_KEY) ?? 'print';
   setMode(mode, { announce: false });
   loadTracks();
 </script>
