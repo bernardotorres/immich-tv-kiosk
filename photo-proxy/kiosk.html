@@ -368,6 +368,7 @@
   let frontIsA = true;
   let busy     = false;
   let nav      = 0;     // bumped on every mode switch; an in-flight fetch for an older nav is dropped
+  let autoFailCount = 0; // consecutive auto-advance failures; skip 1 bad file, show error on dead proxy
 
   // ---- Progress bar (rAF) ----
   let progressStart = null;
@@ -453,7 +454,7 @@
   let autoTimer = null;
   function scheduleAutoAdvance(delay = DISPLAY_DURATION) {
     clearTimeout(autoTimer);
-    autoTimer = setTimeout(goForward, delay);
+    autoTimer = setTimeout(() => goForward({ auto: true }), delay);
   }
 
   // ---- Photos mode ----
@@ -669,6 +670,7 @@
     startProgress();
     scheduleAutoAdvance();
     hideStatus();
+    autoFailCount = 0;
   }
 
   function pushHistory(st, payload) {
@@ -685,7 +687,7 @@
     if (seq === st.prefetchSeq) st.prefetched = payload;
   }
 
-  async function goForward() {
+  async function goForward(opts = {}) {
     if (busy) return;
     if (mode === 'photos' && states.photos.pinned && states.photos.pos >= states.photos.history.length - 1) {
       goSameDay(1);
@@ -709,6 +711,16 @@
     } catch (e) {
       console.error('goForward:', e);
       if (my !== nav) return;
+      if (opts.auto) {
+        autoFailCount++;
+        if (autoFailCount < 3) {
+          // art keeps its position until shown, so step past the bad file by hand
+          if (mode === 'art') { const o = art.orders.get(curGallery()?.id); if (o) o.pos++; }
+          showStatus('Skipping…', { ms: 1500 });
+          scheduleAutoAdvance(1000);
+          return;
+        }
+      }
       showStatus(`Could not load ${m.noun}\n${e.message}\n\nProxy: ${PROXY}\nPress 0 to change · Retrying in ${RETRY_DELAY / 1000} s…`, { persist: true });
       scheduleAutoAdvance(RETRY_DELAY);
     } finally {
