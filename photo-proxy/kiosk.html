@@ -395,6 +395,15 @@
   updateClock();
   setInterval(updateClock, 1000);
 
+  // Prevent webOS web app memory leak (runs for hours)
+  setInterval(() => {
+    if (configOverlay.classList.contains('hidden') && !busy && statusEl.classList.contains('hidden')) {
+      const pl = curPlaylist();
+      if (pl) savePlaylistPos(pl, audio.currentTime);
+      location.reload();
+    }
+  }, 3*3600*1000);
+
   // ---- Night tone (warmer after 19:00) ----
   function updateNight() {
     const hour = new Date().getHours();
