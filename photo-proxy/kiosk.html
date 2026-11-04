@@ -39,12 +39,19 @@
   }
 
   /* ---- Display look (art mode: paper instead of screen) ---- */
-  .look-room, .look-lift, .look-soften {
+  .look-room, .look-lift, .look-soften, .look-tone {
     position: fixed;
     inset: 0;
     pointer-events: none;
-    z-index: 5;
     opacity: 0;
+  }
+  .look-room, .look-lift, .look-soften {
+    z-index: 5;
+  }
+  .look-tone {
+    z-index: 6;
+    background: rgb(255, 214, 168);
+    mix-blend-mode: multiply;
   }
   .look-room {
     background: radial-gradient(ellipse 85% 95% at 24% 6%, rgba(255,244,222,0.07) 0%, rgba(0,0,0,0) 38%, rgba(0,0,0,0.36) 100%);
@@ -58,13 +65,16 @@
   /* Pure black and an even glow give screens away; these veils make the OLED read like lit paper */
   body[data-mode="photos"] .look-room,
   body[data-mode="photos"] .look-lift,
-  body[data-mode="photos"] .look-soften { opacity: 0 !important; }
+  body[data-mode="photos"] .look-soften,
+  body[data-mode="photos"] .look-tone { opacity: 0 !important; }
   body[data-look="print"] .look-room   { opacity: 0.62; }
   body[data-look="print"] .look-lift   { opacity: 0.07; }
   body[data-look="print"] .look-soften { opacity: 0.10; }
   body[data-look="gallery"] .look-room   { opacity: 1; }
   body[data-look="gallery"] .look-lift   { opacity: 0.11; }
   body[data-look="gallery"] .look-soften { opacity: 0.20; }
+  /* Warmer tone at night (lumen-gallery-webos) */
+  body[data-night="1"] .look-tone { opacity: 1; }
 
   /* ---- Overlays (above images) ---- */
   .overlay {
@@ -268,6 +278,7 @@
 <div id="look-room" class="look-room"></div>
 <div id="look-lift" class="look-lift"></div>
 <div id="look-soften" class="look-soften"></div>
+<div id="look-tone" class="look-tone"></div>
 
 <div class="overlay" id="clock">00:00</div>
 <div class="overlay" id="day-indicator"></div>
@@ -379,9 +390,21 @@
     clockEl.textContent =
       String(now.getHours()).padStart(2, '0') + ':' +
       String(now.getMinutes()).padStart(2, '0');
+    updateNight();
   }
   updateClock();
   setInterval(updateClock, 1000);
+
+  // ---- Night tone (warmer after 19:00) ----
+  function updateNight() {
+    const hour = new Date().getHours();
+    const isNight = hour >= 19 || hour < 7;
+    if (isNight) {
+      document.body.dataset.night = '1';
+    } else {
+      delete document.body.dataset.night;
+    }
+  }
 
   // ---- Crossfade ----
   function crossfade(dataUri, ambient) {
