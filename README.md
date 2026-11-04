@@ -63,11 +63,15 @@ Art sources (CC0 / public domain, hand-picked, never bulk-pulled): [Cleveland Mu
 | `calm/` | bright, low saturation, open space, quiet light | landscapes, still life, woodblock prints |
 | `colour/` | saturated, large flat colour fields | Impressionism, abstract, tiles and carpets |
 | `drama/` | dark, high contrast, movement | storm seascapes, battles, deluges, fires |
+| `children/` | vivid, story-rich works selected for young children | 16 images embedded in the Art Class Curator list |
 | new `pattern/` | abstract repetition, no subject, no people | ornament, calligraphy, textiles, geometric tiles |
 | new `night/` | nocturnes, moonlight, lantern light | for an after-sunset automation |
 | new `animals/` | animals as the subject | twins-oriented set, if their TV ever gets the kiosk |
 
 `playful/` stays Niemann; none of these sources has anything playful. `scripts/art-candidates.py` lists the pool as TSV with lumen's people/animal flags and our mood hints applied (people-free, ≥ 3000 px wide, TV-like aspect by default; `--hint night`, `--animals`, `--people`); hand-review ~20 per mood into a `picks.tsv`, and let a `scripts/fetch-art.sh` download it into the mood folders with a `credits.tsv`, like `fetch-nature.sh`.
+
+`children/` is a separate visual channel, not part of the adult mood sequence. It contains the
+16 full-size image files embedded in [Art Class Curator's “20 Great Artworks to Look at with Young Kids”](https://artclasscurator.com/20-great-artworks-to-look-at-with-young-kids/), resampled with ImageMagick's Lanczos filter to a maximum 3840×2160 canvas without upscaling. The four external-link-only works are not included; exact source URLs are recorded in `children/credits.tsv`.
 
 ## Setup
 
