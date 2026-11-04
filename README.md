@@ -66,7 +66,7 @@ Art sources (CC0 / public domain, hand-picked, never bulk-pulled): [Cleveland Mu
 | new `night/` | nocturnes, moonlight, lantern light | for an after-sunset automation |
 | new `animals/` | animals as the subject | twins-oriented set, if their TV ever gets the kiosk |
 
-`playful/` stays Niemann; none of these sources has anything playful. When picks are made: filter out people and anything under 3000 px wide, sort candidates by image stats (mean luminance, mean saturation, contrast) into the moods above, hand-review ~20 per mood, and let a `scripts/fetch-art.sh` download a `picks.tsv` into the mood folders with a `credits.tsv`, like `fetch-nature.sh`.
+`playful/` stays Niemann; none of these sources has anything playful. `scripts/art-candidates.py` lists the pool as TSV with lumen's people/animal flags and our mood hints applied (people-free, ≥ 3000 px wide, TV-like aspect by default; `--hint night`, `--animals`, `--people`); hand-review ~20 per mood into a `picks.tsv`, and let a `scripts/fetch-art.sh` download it into the mood folders with a `credits.tsv`, like `fetch-nature.sh`.
 
 ## Setup
 
