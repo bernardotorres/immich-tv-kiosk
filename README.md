@@ -55,20 +55,18 @@ calm/Caspar David Friedrich - Der Wanderer über dem Nebelmeer.jpg   → mood + 
 colour/Van Gogh - De sterrennacht.jpg                               → mood + artist + title
 ```
 
-Art sources (CC0 / public domain, hand-picked, never bulk-pulled): [Cleveland Museum of Art Open Access](https://openaccess-api.clevelandart.org/) (`cc0=1&has_image=1`, records carry department/type/culture/description; use `images.print` for 4K, `images.web` is ~900 px), [Wikimedia Commons](https://commons.wikimedia.org/) (Islamic art categories already licence-filtered in [lumen-gallery-webos](https://github.com/ammar027/lumen-gallery-webos) `tools/harvest_commons.py`; its `tools/build_art.py` has a people/animals title regex worth copying). Lumen itself is a sibling webOS art app, not installed; its ~7k catalog in `src/config/art.ts` is the browse list. Skip works flagged with people (portraits stare back in a living room).
+Art sources (CC0 / public domain, hand-picked, never bulk-pulled): [Cleveland Museum of Art Open Access](https://openaccess-api.clevelandart.org/) (`cc0=1&has_image=1`; use `images.print` for 4K, `images.web` is ~900 px), [Wikimedia Commons](https://commons.wikimedia.org/), and [lumen-gallery-webos](https://github.com/ammar027/lumen-gallery-webos), a sibling webOS art app (not installed) whose ~7k-work catalog in `src/config/art.ts` is an already licence-cleared pool with image URLs and a people/animals flag per work. Its own collections (Landscapes, Islamic Art, Japanese Prints, …) are title-regex buckets and are not our taxonomy; we pick by how a work looks on the wall, not by what it is. Skip works flagged with people (portraits stare back in a living room).
 
-| Lumen collection | Our mood | Collect |
+| Mood | Looks like | Where it tends to come from |
 |---|---|---|
-| Landscapes, Flowers & Still Life, Japanese Prints (Hiroshige, Hokusai) | `calm/` | quiet light, no people (`p=0`) |
-| Impressionism, Modern & Abstract, Islamic tiles & carpets | `colour/` | saturated, large flat colour fields |
-| Seascapes (storm, wreck), Paintings tagged battle/deluge/fire | `drama/` | dark, high contrast |
-| Islamic calligraphy, manuscripts, geometric ornament | new `pattern/` | abstract, no people, suits OLED art mode |
-| Nocturnes, moonlit landscapes, lantern-lit prints | new `night/` | for after-sunset automation |
-| Animals in art (`n=1`) | new `animals/` | twins-oriented set, if their TV ever gets the kiosk |
+| `calm/` | bright, low saturation, open space, quiet light | landscapes, still life, woodblock prints |
+| `colour/` | saturated, large flat colour fields | Impressionism, abstract, tiles and carpets |
+| `drama/` | dark, high contrast, movement | storm seascapes, battles, deluges, fires |
+| new `pattern/` | abstract repetition, no subject, no people | ornament, calligraphy, textiles, geometric tiles |
+| new `night/` | nocturnes, moonlight, lantern light | for an after-sunset automation |
+| new `animals/` | animals as the subject | twins-oriented set, if their TV ever gets the kiosk |
 
-`playful/` stays Niemann; neither source has anything playful. When picks are made: filter `p=0` and width ≥ 3000, sort by image stats (bright + low saturation → calm, high saturation → colour, dark + high contrast → drama), hand-review ~20 per mood, and let a `scripts/fetch-art.sh` download a `picks.tsv` into the mood folders with a `credits.tsv`, like `fetch-nature.sh`.
-
-Drop `.mp3` (or `.ogg`, `.m4a`, `.wav`, `.flac`) into the tracks folder for the default `Ambient & Classical` playlist (shuffled). Additional playlists are served automatically when their folders exist (`PIMSLEUR_DIR` played in sequential order with saved position; `CALLAS_DIR` and `SETS_DIR` shuffled). Nature Sounds comes from `NATURE_DIR` and is filled by `scripts/fetch-nature.sh`; a file name listed in `skip.txt` beside the recordings is never downloaded again. Copyright-free ambient/classical sources: [Wikimedia Commons](https://commons.wikimedia.org/), [Free Music Archive](https://freemusicarchive.org/) (CC0 / CC BY), [Incompetech](https://incompetech.com/music/royalty-free/) (Kevin MacLeod, CC BY), [ccMixter](https://ccmixter.org/).
+`playful/` stays Niemann; none of these sources has anything playful. When picks are made: filter out people and anything under 3000 px wide, sort candidates by image stats (mean luminance, mean saturation, contrast) into the moods above, hand-review ~20 per mood, and let a `scripts/fetch-art.sh` download a `picks.tsv` into the mood folders with a `credits.tsv`, like `fetch-nature.sh`.
 
 ## Setup
 
