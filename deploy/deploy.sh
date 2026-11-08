@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy photo-proxy to peri, at the same path it has here: ~/codes/photoskiosk/photo-proxy.
 # Leaves .env alone — create it once on the server from .env.example.
-# art/ and tracks/ are synced too (additive: files removed here stay on the server).
+# art/ is mirrored (--delete: removed here = removed there); tracks/ is additive.
 set -euo pipefail
 HOST="${1:-peri.tailfd692f.ts.net}"
 HERE="$(cd "$(dirname "$0")" && pwd)"

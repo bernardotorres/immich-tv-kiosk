@@ -28,7 +28,7 @@ the top is for direct jumps. A *gallery* is a day in Photos and a mood in Art.
 | Key | Photos | Art |
 |-----|--------|-----|
 | ← / → | Previous / next photo of that day (wraps) | Previous / next artwork of the mood (shuffled once per session, wraps) |
-| ↑ / ↓ | Newer / older day | Previous / next mood (`All` → `Calm` → `Colour` → `Drama` → `Playful`, alphabetical after `All`) |
+| ↑ / ↓ | Newer / older day | Previous / next mood (`All` → `Calm` → `Children` → `Colour` → `Drama` → `Playful`: `All` first, then the folders alphabetically) |
 | auto (60 s) | Random photo; once you walked into a day with the ring, the next photo of that day | Next artwork of the current mood |
 | OK | Station · track | Artwork label, mood, station · track |
 | Back | Previously shown picture (history, up to 20 per mode) | same |
@@ -63,15 +63,36 @@ Art sources (CC0 / public domain, hand-picked, never bulk-pulled): [Cleveland Mu
 | `calm/` | bright, low saturation, open space, quiet light | landscapes, still life, woodblock prints |
 | `colour/` | saturated, large flat colour fields | Impressionism, abstract, tiles and carpets |
 | `drama/` | dark, high contrast, movement | storm seascapes, battles, deluges, fires |
-| `children/` | vivid, story-rich works selected for young children | 16 images embedded in the Art Class Curator list |
+| `children/` | vivid, story-rich, nothing frightening, for young children | Art Class Curator list (16), Brazilian public-domain works from Commons (10) |
 | new `pattern/` | abstract repetition, no subject, no people | ornament, calligraphy, textiles, geometric tiles |
 | new `night/` | nocturnes, moonlight, lantern light | for an after-sunset automation |
 | new `animals/` | animals as the subject | twins-oriented set, if their TV ever gets the kiosk |
 
 `playful/` stays Niemann; none of these sources has anything playful. `scripts/art-candidates.py` lists the pool as TSV with lumen's people/animal flags and our mood hints applied (people-free, ≥ 3000 px wide, TV-like aspect by default; `--hint night`, `--animals`, `--people`); hand-review ~20 per mood into a `picks.tsv`, and let a `scripts/fetch-art.sh` download it into the mood folders with a `credits.tsv`, like `fetch-nature.sh`.
 
-`children/` is a separate visual channel, not part of the adult mood sequence. It contains the
-16 full-size image files embedded in [Art Class Curator's “20 Great Artworks to Look at with Young Kids”](https://artclasscurator.com/20-great-artworks-to-look-at-with-young-kids/), resampled with ImageMagick's Lanczos filter to a maximum 3840×2160 canvas without upscaling. The four external-link-only works are not included; exact source URLs are recorded in `children/credits.tsv`.
+`children/` is a gallery for the twins. Like every subfolder it is in the ↑/↓ cycle and its works
+also show in `All`. It holds 16 works from [Art Class Curator's “20 Great Artworks to Look at with Young Kids”](https://artclasscurator.com/20-great-artworks-to-look-at-with-young-kids/)
+(the four link-only works are missing) and 10 Brazilian public-domain works from Wikimedia Commons
+(Eckhout, Frans Post, Rugendas, Almeida Júnior, Estêvão Silva, Eliseu Visconti), added 2026-11-08.
+
+### Adding artwork
+
+1. **Pick by hand** from a source with a clear licence: public domain or CC0 (museum open-access
+   APIs, Commons). Brazilian artists entering the public domain: died 70+ years before the
+   current year (Visconti, d. 1944, is in; Tarsila, Portinari, Volpi and the Florianópolis
+   artists are not). For `children/`: no nudity, violence or frightening scenes, nothing ambiguous;
+   favour bright colour, animals, nature, play, family, folk traditions, strong shapes.
+2. **Download the original**, never a thumbnail or page screenshot. On Commons the original is at
+   `upload.wikimedia.org/wikipedia/commons/<h>/<hh>/<File_name>`, where `h` and `hh` are the first one and two hex
+   digits of the MD5 of the underscored name. That host keeps working when the Commons API answers
+   429, which it does after a handful of search calls.
+3. **Resample without upscaling**, then look at every image before it goes in:
+   `magick in.jpg -colorspace sRGB -filter Lanczos -resize '3840x2160>' -strip -quality 92 'Artist - Title.jpg'`
+   (zsh: write `"${f}[0]"`, not `"$f[0]"`).
+4. **Name it** `Artist - Title.jpg`, with the title in the artist's original language, and add a row to
+   the folder's `credits.tsv` (`filename  source  page  license  accessed`).
+5. **Deploy** with `deploy/deploy.sh`, then check the counts in `/art/galleries` and the labels in
+   `/art/list?gallery=<mood>`.
 
 ## Setup
 
@@ -109,7 +130,7 @@ The default proxy URL is in `kiosk.html` (`DEFAULT_PROXY`) and can be changed on
 ```bash
 cp photo-proxy/kiosk.html hosted/index.html
 ares-package hosted/
-ares-install --device <your-device> com.torres.immichscreen_1.3.2_all.ipk
+ares-install --device <your-device> com.torres.immichscreen_<version>_all.ipk   # version from hosted/appinfo.json
 ares-launch  --device <your-device> com.torres.immichscreen
 ```
 
@@ -183,8 +204,9 @@ PROXY_BASE=http://<server-ip>:3002 npm run test:kiosk
 | `IMMICH_API_KEY` | *(required)* | Immich API key |
 | `IMMICH_BASE` | `http://localhost:2283/api` | Immich API base URL |
 | `PORT` | `3002` | Port for the proxy server |
-| `ART_DIR` | `photo-proxy/art` | Folder of artwork images (flat) |
+| `ART_DIR` | `photo-proxy/art` | Artwork folder; each subfolder is a gallery |
 | `TRACKS_DIR` | `photo-proxy/tracks` | Folder of audio tracks |
+| `PIMSLEUR_DIR`, `CALLAS_DIR`, `SETS_DIR`, `NATURE_DIR` | `~/Library/...` paths on peri | Folders behind the `Polish Learning`, `Maria Callas`, `DJ Sets` and `Nature Sounds` stations |
 
 ## Tuning
 
