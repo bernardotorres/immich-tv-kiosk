@@ -47,11 +47,52 @@ async function fetchThumbnail(id) {
   return `data:image/jpeg;base64,${buf.toString('base64')}`;
 }
 
+// ---------------------------------------------------------------------------
+// Hidden albums: assets in albums matching HIDE_ALBUMS never reach the TV (triage review
+// albums and "Hide from TV"). Reread every 5 minutes, so taking a photo out of the album
+// brings it back.
+// ---------------------------------------------------------------------------
+
+const HIDE_ALBUMS = new RegExp(process.env.HIDE_ALBUMS ?? '^(Library triage reject|Triage reject: documents|Hide from TV)', 'i');
+let hiddenIds = new Set();
+
+async function albumAssetIds(albumId) {
+  const ids = [];
+  for (let page = 1; page; ) {
+    const res = await fetch(`${IMMICH_BASE}/search/metadata`, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ albumIds: [albumId], size: 1000, page }),
+    });
+    if (!res.ok) throw new Error(`album search ${res.status}`);
+    const data = (await res.json())?.assets ?? {};
+    for (const a of data.items ?? []) ids.push(a.id);
+    page = data.nextPage ? parseInt(data.nextPage, 10) : 0;
+  }
+  return ids;
+}
+
+async function refreshHidden() {
+  try {
+    const res = await fetch(`${IMMICH_BASE}/albums`, { headers: HEADERS });
+    if (!res.ok) throw new Error(`albums ${res.status}`);
+    const albums = (await res.json()).filter(a => HIDE_ALBUMS.test(a.albumName));
+    const next = new Set();
+    for (const a of albums) for (const id of await albumAssetIds(a.id)) next.add(id);
+    if (next.size !== hiddenIds.size) console.log(`[hidden] ${next.size} assets in ${albums.length} albums`);
+    hiddenIds = next;
+  } catch (err) {
+    console.error('[hidden] keeping previous list:', err.message);
+  }
+}
+
 async function pickRandomImageAsset() {
-  const assets = await fetchRandomAssets();
-  const img = assets.find(a => a.type === 'IMAGE');
-  if (!img) throw new Error('No IMAGE asset in random batch');
-  return img;
+  for (let i = 0; i < 5; i++) {
+    const assets = await fetchRandomAssets();
+    const img = assets.find(a => a.type === 'IMAGE' && !hiddenIds.has(a.id));
+    if (img) return img;
+  }
+  throw new Error('No visible IMAGE asset in random batches');
 }
 
 // Immich can list an asset whose preview file is gone from disk (thumbnail 404);
@@ -112,7 +153,7 @@ const DAY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 async function getDayAssets(dateStr) {
   const cached = dayCache.get(dateStr);
   if (cached && Date.now() - cached.fetchedAt < DAY_CACHE_TTL_MS) {
-    return cached.assets;
+    return cached.assets.filter(a => !hiddenIds.has(a.id));
   }
 
   // takenAfter = start of day, takenBefore = end of day (ISO 8601 UTC)
@@ -138,7 +179,7 @@ async function getDayAssets(dateStr) {
   });
 
   dayCache.set(dateStr, { assets, fetchedAt: Date.now() });
-  return assets;
+  return assets.filter(a => !hiddenIds.has(a.id));
 }
 
 function assetDay(asset) {
@@ -754,8 +795,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const day = await findAdjacentDay(dateStr, dir);
-      const payload = day ? await firstOfDay(day) : null;
+      // a day whose photos are all hidden is skipped
+      let day = dateStr, payload = null;
+      for (let i = 0; i < 10 && !payload; i++) {
+        day = await findAdjacentDay(day, dir);
+        if (!day) break;
+        payload = await firstOfDay(day);
+      }
       if (!payload) {
         sendError(res, 404, `No photos ${dir > 0 ? 'before' : 'after'} ${dateStr}`);
         return;
@@ -905,8 +951,11 @@ server.listen(PORT, '0.0.0.0', () => {
   for (const pl of getPlaylists()) {
     console.log(`[photo-proxy] station "${pl.id}" (${pl.label}): ${pl.tracks.length} ${pl.live ? 'live streams' : `tracks in ${pl.dir}`}`);
   }
-  console.log('[photo-proxy] pre-fetching first random image...');
-  startPrefetch();
+  refreshHidden().finally(() => {
+    console.log('[photo-proxy] pre-fetching first random image...');
+    startPrefetch();
+  });
+  setInterval(refreshHidden, 5 * 60 * 1000);
 });
 
 server.on('error', err => {
