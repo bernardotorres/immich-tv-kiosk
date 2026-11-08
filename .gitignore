@@ -9,3 +9,4 @@ photo-proxy/tracks/*
 photo-proxy/art/*
 !photo-proxy/art/.gitkeep
 photo-proxy/scripts/lumen-art.ts
+photo-proxy/shown-log/

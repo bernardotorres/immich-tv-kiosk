@@ -21,7 +21,7 @@ synced by `deploy.sh`; `Polish Radio` streams 16 live Polish stations, featuring
 reads from `~/Library/books/Polski/Pimsleur/Pimsleur - Polish I` (sequential order, resuming last
 unit and timestamp); `Maria Callas` from `~/Library/musik/callas`; and `DJ Sets` from
 `~/Library/musik/sets`. `Nature Sounds` from `~/Library/musik/nature` (flat folder of hour-scale recordings: four Internet Archive collections, CC0 or uploader's own, plus xeno-canto soundscapes from the Amazon, Mata Atlântica, Mata Atlântica Sul, Pantanal/Cerrado, Santa Catarina, Germany and Poland; filled on peri by `photo-proxy/scripts/fetch-nature.sh`, idempotent, log in `fetch.log`, attribution in `credits.tsv`; never synced by `deploy.sh`. To drop a recording for good, delete the mp3 and add its file name to `skip.txt` in that folder, else the next run fetches it back. The `Brasil Mata Atlântica` set is almost all Brasília: its box reaches the Federal District and the length sort favours one recordist there, so it is cerrado, cicada-heavy, not coastal forest); `Nature Radio` streams 9 live nature stations (MyNoise Pure Nature, Ambi Nature Radio, Nature Radio Rain/Sleep, LiSTNR Rainforest/Light Rain/Waterfall via ffmpeg, 24/7 Nature Radio, Sleepscapes Rain). `~/codes/artgallery` on the Mac is now only history and can be deleted; the
-old app can be removed from the TV with `ares-install --device Odeon --remove com.torres.artgallery`.
+old app can be removed from the TV over root ssh (`~/codes/peri/devices/tv/AGENTS.md`, "Install, launch, remove a webOS app (root path)").
 
 | Component | Location |
 |---|---|
@@ -30,7 +30,8 @@ old app can be removed from the TV with `ares-install --device Odeon --remove co
 | Redeploy | `~/codes/photoskiosk/deploy/deploy.sh` |
 | Env | `peri:~/codes/photoskiosk/photo-proxy/.env` (`IMMICH_API_KEY`, `IMMICH_BASE`, `PORT`; optional `ART_DIR`, `TRACKS_DIR`, `PIMSLEUR_DIR`, `CALLAS_DIR`, `SETS_DIR`, `NATURE_DIR`; `XENO_CANTO_KEY` is read only by `fetch-nature.sh`, from 1Password Personal item "Xeno-canto") |
 | Art / audio | `peri:~/codes/photoskiosk/photo-proxy/art/` (27 existing artworks in four moods, plus `children/` with 16 Art Class Curator works), `.../tracks/` (19 ambient & classical mp3s), plus `Pimsleur Polish I` (30 units), `Maria Callas` (8 recordings), `DJ Sets` (12 sets), `Nature Sounds` (`~/Library/musik/nature`) |
-| TV | `192.168.178.41`, HA entry `webostv` "Odeon", dev-mode ssh on 9922 (`ares-* --device Odeon`) |
+| Shown log | `peri:~/codes/photoskiosk/photo-proxy/shown-log/shown-YYYY-MM-DD.jsonl` (UTC days), one line per photo, artwork, track start and radio song change served; `from` is the client IP (TV `192.168.178.41`; the Kuma check hits `/random` too). Kept 30 days, pruned by the proxy at day rollover. Example: `jq -c 'select(.from=="192.168.178.41")' shown-log/shown-2026-11-08.jsonl` |
+| TV | `192.168.178.41`, HA entry `webostv` "Odeon"; rooted since 2026-10-24, Developer Mode gone, so install over root ssh (`~/codes/peri/devices/tv/AGENTS.md`); `ares-*` only packages |
 | Launch | HA automation `tv_kiosk_screensaver` (every 30s) → `shell_command.launch_kiosk` → `/config/launch_kiosk.py` |
 
 **The TV hits `http://192.168.178.250:3002`, the default in `kiosk.html`** (changeable on the TV with
@@ -38,7 +39,7 @@ old app can be removed from the TV with `ares-install --device Odeon --remove co
 the TV is not on the tailnet. So the proxy must listen on the LAN interface; do not move it behind Caddy.
 
 Restored 2026-09-16 after the deployed copy and its unit had vanished from peri — same silent
-disappearance as immich-sync (see `~/codes/peri/immich-sync/README.md`; likely the Aug 28 reboot / drive-check episode).
+disappearance as immich-sync (see `~/codes/peri/services/immich/README.md`; likely the Aug 28 reboot / drive-check episode).
 Symptom on the TV: the clock keeps ticking (it is client-side) under `Failed to fetch Retrying in
 5s…`, because only the data fetches fail. Everything else was healthy, which is what makes this
 look like an Immich or network fault when it is neither.
@@ -52,7 +53,7 @@ is set to. The script also refuses to launch unless the power state is `Active`:
 still answers webOS and still names a foreground app, so without that guard the automation would
 switch the TV on by itself. HA backups: `/opt/home-assistant/config/*.bak-20260916`.
 
-**Developer Mode keep-alive (2026-10-12).** The Dev Mode session had lapsed and LG had wiped both
+**Developer Mode keep-alive (2026-10-12, obsolete since the 2026-10-24 root; the HA automation `tv_devmode_keepalive` is still installed and has nothing left to keep alive).** The Dev Mode session had lapsed and LG had wiped both
 dev-installed apps, so `launch_kiosk.py` failed with exit 1 on every idle check. HA automation
 `tv_devmode_keepalive` (daily 04:30 and on HA start) runs `/config/extend_devmode.py`: it reads the
 session token over the Dev Mode ssh port (key at `/config/lg/webos_rsa`, 0600, from the TV's key
@@ -63,10 +64,10 @@ after that, refetch the key from `http://192.168.178.41:9991/webos_rsa` and rein
 `launch_kiosk.py` now also treats power state `Screen Saver` as idle and takes over immediately;
 before, the `!= "Active"` guard read it as standby and never launched. Installed 1.0.1 (and artgallery 1.0.4) the same day with `screenSaverProperties.preferredType: 3` in `appinfo.json`: before, LG's clock screensaver was drawn over the running kiosk (foreground app stayed the kiosk, power state `Screen Saver`), and a relaunch does not clear it. The manifest setting turned out not to be honoured; 1.0.4 (same evening) refuses the screensaver through the tvpower service instead, see README. `ares-*` must run under
 Node 22 (`~/.nvm/versions/node/v22.22.2/bin`): under Node 25 the CLI dies with `isDate is not a function`.
-If `ares-install` gets `ECONNREFUSED 192.168.178.41:9922` the Developer Mode session has lapsed; install the ipk over root ssh instead (recipe in `~/codes/peri/devices/tv/AGENTS.md`, "Install, launch, remove a webOS app (root path)"), as done for 1.3.2 on 2026-11-01. `hosted/index.html` is a gitignored copy of `kiosk.html`; the TV runs the packaged copy, not the page the proxy serves, so a `kiosk.html` change needs a new ipk.
+Since the TV was rooted (2026-10-24) Developer Mode is gone for good and `ares-install` always gets `ECONNREFUSED 192.168.178.41:9922`; install the ipk over root ssh (recipe in `~/codes/peri/devices/tv/AGENTS.md`, "Install, launch, remove a webOS app (root path)"), as done for 1.3.2 on 2026-11-01. `hosted/index.html` is a gitignored copy of `kiosk.html`; the TV runs the packaged copy, not the page the proxy serves, so a `kiosk.html` change needs a new ipk.
 
 Missing previews (2026-10-09). Immich answers 404 for the preview of ~9.9k assets whose originals are
-damaged (see `~/codes/peri/RECOVERY-LIBRARY.md`, immich row). `server.mjs` retries `/random` with another
+damaged (see `~/codes/peri/archive/library-recovery/README.md`). `server.mjs` retries `/random` with another
 asset on a thumbnail 404 (up to 5), so the kiosk and the Kuma `photo-proxy` check no longer see a 500 for
 them. Before that fix the check flapped 7–15 times a day since it was created on 2026-09-26.
 

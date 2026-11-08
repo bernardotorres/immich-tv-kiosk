@@ -557,6 +557,53 @@ function streamTrack(req, res, dir, filename) {
 }
 
 // ---------------------------------------------------------------------------
+// Shown log: one JSON line per picture/track handed to a client, a file per UTC day,
+// files older than SHOWN_KEEP_DAYS pruned at each day rollover. `from` tells the TV
+// apart from the Kuma check and desktop testing.
+// ---------------------------------------------------------------------------
+
+const SHOWN_DIR       = process.env.SHOWN_LOG_DIR ?? path.join(__dirname, 'shown-log');
+const SHOWN_KEEP_DAYS = 30;
+let shownDay = null;
+
+function pruneShown(today) {
+  const cutoff = new Date(Date.parse(today) - SHOWN_KEEP_DAYS * 86400000).toISOString().slice(0, 10);
+  fs.readdir(SHOWN_DIR, (err, files) => {
+    if (err) return;
+    for (const f of files) {
+      const m = f.match(/^shown-(\d{4}-\d{2}-\d{2})\.jsonl$/);
+      if (m && m[1] < cutoff) fs.unlink(path.join(SHOWN_DIR, f), () => {});
+    }
+  });
+}
+
+function logShown(req, entry) {
+  const t = new Date().toISOString();
+  const day = t.slice(0, 10);
+  if (day !== shownDay) {
+    shownDay = day;
+    try { fs.mkdirSync(SHOWN_DIR, { recursive: true }); } catch {}
+    pruneShown(day);
+  }
+  const line = JSON.stringify({ t, ...entry, from: req.socket.remoteAddress?.replace(/^::ffff:/, '') }) + '\n';
+  fs.appendFile(path.join(SHOWN_DIR, `shown-${day}.jsonl`), line, err => {
+    if (err) console.error('[shown-log]', err.message);
+  });
+}
+
+function logPhoto(req, via, asset) {
+  if (!asset) return;
+  logShown(req, {
+    kind: 'photo', via, id: asset.id,
+    taken: asset.localDateTime ?? asset.fileCreatedAt,
+    file: asset.originalFileName,
+    city: asset.exifInfo?.city ?? undefined,
+  });
+}
+
+const lastNowPlaying = new Map();
+
+// ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
 
@@ -607,6 +654,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const payload = await getRandomFromPool();
       sendJson(res, 200, payload);
+      logPhoto(req, 'random', payload.asset);
     } catch (err) {
       console.error('[/random]', err.message);
       sendError(res, 500, err.message);
@@ -645,6 +693,7 @@ const server = http.createServer(async (req, res) => {
       const dataUri = await fetchThumbnail(asset.id);
 
       sendJson(res, 200, { asset, dataUri, index: idx + 1, total: assets.length });
+      logPhoto(req, 'same-day', asset);
     } catch (err) {
       console.error('[/same-day]', err.message);
       sendError(res, 500, err.message);
@@ -664,6 +713,7 @@ const server = http.createServer(async (req, res) => {
         fetchThumbnail(id),
       ]);
       sendJson(res, 200, { asset: assetRes, dataUri });
+      logPhoto(req, 'back', assetRes);
     } catch (err) {
       console.error('[/asset]', err.message);
       sendError(res, 500, err.message);
@@ -711,6 +761,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       sendJson(res, 200, payload);
+      logPhoto(req, 'day-nav', payload.asset);
     } catch (err) {
       console.error('[/day-nav]', err.message);
       sendError(res, 500, err.message);
@@ -723,7 +774,9 @@ const server = http.createServer(async (req, res) => {
   // ------------------------------------------------------------------
   if (req.method === 'GET' && url.pathname === '/art/random') {
     try {
-      sendJson(res, 200, randomArtPayload(url.searchParams.get('gallery') ?? 'all'));
+      const { dataUri, ...art } = randomArtPayload(url.searchParams.get('gallery') ?? 'all');
+      sendJson(res, 200, { ...art, dataUri });
+      logShown(req, { kind: 'art', ...art });
     } catch (err) {
       console.error('[/art/random]', err.message);
       sendError(res, err.status ?? 500, err.message);
@@ -755,7 +808,9 @@ const server = http.createServer(async (req, res) => {
   // ------------------------------------------------------------------
   if (req.method === 'GET' && url.pathname === '/art/image') {
     try {
-      sendJson(res, 200, buildArtPayload(url.searchParams.get('file') ?? ''));
+      const { dataUri, ...art } = buildArtPayload(url.searchParams.get('file') ?? '');
+      sendJson(res, 200, { ...art, dataUri });
+      logShown(req, { kind: 'art', ...art });
     } catch (err) {
       if (!err.status) console.error('[/art/image]', err.message);
       sendError(res, err.status ?? 500, err.message);
@@ -794,6 +849,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const title = await fetchStationNowPlaying(streamDef);
+    if (title && lastNowPlaying.get(streamDef.name) !== title) {
+      lastNowPlaying.set(streamDef.name, title);
+      logShown(req, { kind: 'song', station: streamDef.name, title });
+    }
     sendJson(res, 200, { station: streamDef.name, nowPlaying: title || null });
     return;
   }
@@ -810,6 +869,8 @@ const server = http.createServer(async (req, res) => {
     } catch { sendError(res, 400, 'Bad track path'); return; }
     const pl = PLAYLIST_DEFS.find(p => p.id === playlistId);
     if (!pl) { sendError(res, 404, 'Unknown playlist'); return; }
+    // Range requests past byte 0 are the player seeking within a track already logged.
+    if (!/^bytes=(?!0-)/.test(req.headers.range ?? '')) logShown(req, { kind: 'audio', station: playlistId, track: filename });
     if (pl.streams) {
       const streamDef = pl.streams.find(s => s.name === filename || s.name.startsWith(filename + ' (') || filename.startsWith(s.name));
       if (!streamDef) { sendError(res, 404, 'Unknown radio stream'); return; }
@@ -828,6 +889,7 @@ const server = http.createServer(async (req, res) => {
     let filename;
     try { filename = decodeURIComponent(track[1]); }
     catch { sendError(res, 400, 'Bad track name'); return; }
+    if (!/^bytes=(?!0-)/.test(req.headers.range ?? '')) logShown(req, { kind: 'audio', track: filename });
     streamTrack(req, res, TRACKS_DIR, filename);
     return;
   }
